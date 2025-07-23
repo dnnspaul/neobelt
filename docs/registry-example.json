@@ -1,0 +1,86 @@
+[
+    {
+        "name": "Atlassian MCP",
+        "description": "Atlassian MCP is a tool for managing Atlassian products.",
+        "setup_description": "Checkout the [Quick Start Guide](https://github.com/sooperset/mcp-atlassian?tab=readme-ov-file#quick-start-guide) for more information.",
+        "support_url": "https://github.com/sooperset/mcp-atlassian/issues",
+        "docker_image": "ghcr.io/sooperset/mcp-atlassian:0.11.9",
+        "version": "0.11.9",
+        "license": "MIT",
+        "maintainer": "soomiles.dev@gmail.com",
+        "tags": [
+            "atlassian",
+            "productivity",
+            "ticketing"
+        ],
+        "architecture": [
+            "linux/amd64",
+            "linux/arm64"
+        ],
+        "health_check": {
+            "endpoint": "/health",
+            "interval": "30s"
+        },
+        "resource_requirements": {
+            "memory": "512MB",
+            "cpu": "0.5"
+        },
+        "docker_command": "--transport streamable-http --port 9000",
+        "environment_variables": {
+            "required": [
+                {
+                    "name": "JIRA_URL",
+                    "description": "The URL of the JIRA instance."
+                },
+                {
+                    "name": "JIRA_USERNAME",
+                    "description": "The username for the JIRA instance."
+                },
+                {
+                    "name": "JIRA_API_TOKEN",
+                    "description": "The API token for the JIRA instance."
+                },
+                {
+                    "name": "CONFLUENCE_URL",
+                    "description": "The URL of the Confluence instance."
+                },
+                {
+                    "name": "CONFLUENCE_USERNAME",
+                    "description": "The username for the Confluence instance."
+                },
+                {
+                    "name": "CONFLUENCE_API_TOKEN",
+                    "description": "The API token for the Confluence instance."
+                }
+            ],
+            "optional": [
+                {
+                    "name": "ENABLED_TOOLS",
+                    "description": "Comma-separated list of tools to enable. See https://github.com/sooperset/mcp-atlassian/blob/main/docs/tools.md for more information."
+                },
+                {
+                    "name": "READ_ONLY_MODE",
+                    "description": "Enable read-only mode. This will prevent the MCP server from making any changes to the Atlassian instance.",
+                    "value": "true"
+                }
+            ],
+            "default": [
+                {
+                    "name": "MCP_LOGGING_STDOUT",
+                    "description": "Enable logging to stdout instead of stderr.",
+                    "value": "true"
+                },
+                {
+                    "name": "MCP_VERBOSE",
+                    "description": "Enable verbose logging.",
+                    "value": "true"
+                }
+            ]
+        },
+        "ports": {
+            "mcp": 9000,
+            "admin": null
+        },
+        "volumes": []
+    }
+]

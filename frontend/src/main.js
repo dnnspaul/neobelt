@@ -25,6 +25,8 @@ class App {
     init() {
         this.setupRoutes();
         this.render();
+        // Initialize router after routes are set up
+        router.init();
     }
 
     setupRoutes() {
@@ -52,9 +54,6 @@ class App {
 
         // Initialize sidebar event listeners
         this.sidebar.attachEventListeners();
-        
-        // Update active nav on initial load
-        setTimeout(() => this.sidebar.updateActiveNav(), 100);
     }
 
     showPage(pageName) {
@@ -71,6 +70,9 @@ class App {
         if (page.attachEventListeners) {
             page.attachEventListeners();
         }
+        
+        // Update sidebar navigation state
+        this.sidebar.updateActiveNav();
         
         this.currentPage = pageName;
     }

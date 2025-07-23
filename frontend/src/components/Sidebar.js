@@ -2,17 +2,19 @@ import router from '../router.js';
 
 export class Sidebar {
     constructor() {
-        this.render();
-        this.attachEventListeners();
+        // Don't call render or attachEventListeners here
+        // They will be called from main App after DOM is ready
     }
 
     render() {
         return `
             <div class="w-64 bg-white shadow-sm border-r border-gray-200 flex flex-col">
                 <!-- Logo -->
-                <div class="p-6 border-b border-gray-200">
-                    <div class="flex items-center justify-center">
-                        <span class="text-3xl text-gray-900 font-bitcount">Neobelt</span>
+                <div class="bg-white border-b border-gray-200 flex-shrink-0">
+                    <div class="pl-6 pr-6 py-4">
+                        <div class="flex items-center justify-center h-14">
+                            <span class="text-3xl text-gray-900 font-bitcount">neobelt</span>
+                        </div>
                     </div>
                 </div>
 
@@ -79,11 +81,6 @@ export class Sidebar {
         window.addEventListener('hashchange', () => {
             this.updateActiveNav();
         });
-
-        // Set initial active state
-        setTimeout(() => {
-            this.updateActiveNav();
-        }, 100);
     }
 
     updateActiveNav() {
