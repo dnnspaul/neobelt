@@ -14,7 +14,7 @@ export class Dashboard {
         return `
             <div class="h-full flex flex-col overflow-hidden">
                 <!-- Header -->
-                <div class="bg-white shadow-sm border-b border-gray-200 flex-shrink-0">
+                <div class="bg-white border-b border-gray-200 flex-shrink-0">
                     <div class="pl-6 pr-0 py-4">
                         <div class="flex items-center justify-between">
                             <div class="flex-1 min-w-0">
