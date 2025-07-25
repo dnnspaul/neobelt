@@ -107,7 +107,7 @@ export class Registry {
                         <div class="flex items-center justify-between">
                             <div class="flex-1 min-w-0">
                                 <h1 class="text-2xl font-bold text-gray-900">Registry</h1>
-                                <p class="text-gray-600">Discover and install MCP servers</p>
+                                <p class="text-gray-600">Discover and install MCP server images</p>
                             </div>
                             <div class="flex space-x-3 ml-6 pr-6">
                                 <button id="refresh-registry-btn" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500">
@@ -242,6 +242,20 @@ export class Registry {
             // Call the backend to fetch servers from all configured registries
             const servers = await window.go.main.App.FetchAllRegistries();
             
+            // Get installed servers to check installation status
+            let installedServers = [];
+            try {
+                installedServers = await window.go.main.App.GetInstalledServers();
+            } catch (error) {
+                console.warn('Failed to fetch installed servers:', error);
+            }
+            
+            // Create a map of installed Docker images for quick lookup
+            const installedImageMap = new Map();
+            installedServers.forEach(installed => {
+                installedImageMap.set(installed.docker_image, installed);
+            });
+            
             // Convert backend format to frontend format
             this.servers = servers.map((server, index) => ({
                 id: index + 1,
@@ -250,13 +264,20 @@ export class Registry {
                 description: server.description,
                 version: server.version,
                 tags: server.tags || [],
-                installed: false, // Mock installation status for now
+                installed: installedImageMap.has(server.docker_image), // Check if this Docker image is installed
                 official: server.is_official, // Use the backend-provided flag
                 lastUpdated: new Date().toISOString().split('T')[0], // Mock last updated
                 dockerImage: server.docker_image,
                 setupDescription: server.setup_description,
                 supportURL: server.support_url,
                 license: server.license,
+                architecture: server.architecture || [],
+                healthCheck: server.health_check || {},
+                resourceRequirements: server.resource_requirements || {},
+                dockerCommand: server.docker_command || '',
+                environmentVariables: server.environment_variables || {},
+                ports: server.ports || {},
+                volumes: server.volumes || [],
                 sourceRegistryName: server.source_registry_name,
                 sourceRegistryURL: server.source_registry_url
             }));
@@ -658,8 +679,8 @@ export class Registry {
                             <dd class="text-gray-700">${server.version}</dd>
                         </div>
                         <div>
-                            <dt class="font-medium text-gray-900">Size</dt>
-                            <dd class="text-gray-700">${server.size}</dd>
+                            <dt class="font-medium text-gray-900">Docker Image</dt>
+                            <dd class="text-gray-700">${server.dockerImage}</dd>
                         </div>
                         <div>
                             <dt class="font-medium text-gray-900">Author</dt>
@@ -667,35 +688,77 @@ export class Registry {
                         </div>
                         <div>
                             <dt class="font-medium text-gray-900">License</dt>
-                            <dd class="text-gray-700">${server.license}</dd>
+                            <dd class="text-gray-700">${server.license || 'Unknown'}</dd>
                         </div>
+                        ${server.ports && Object.keys(server.ports).length > 0 ? `
+                            <div>
+                                <dt class="font-medium text-gray-900">Default Port</dt>
+                                <dd class="text-gray-700">${Object.values(server.ports)[0] || 'Not specified'}</dd>
+                            </div>
+                        ` : ''}
+                        ${server.resourceRequirements && server.resourceRequirements.memory ? `
+                            <div>
+                                <dt class="font-medium text-gray-900">Memory</dt>
+                                <dd class="text-gray-700">${server.resourceRequirements.memory}</dd>
+                            </div>
+                        ` : ''}
                     </dl>
                 </div>
 
-                <div class="space-y-4">
-                    <h4 class="font-medium text-gray-900">Installation Options</h4>
+                ${server.environmentVariables && this.parseEnvironmentVariables(server.environmentVariables).length > 0 ? `
                     <div class="space-y-3">
-                        <label class="flex items-center">
-                            <input type="checkbox" class="mr-3" checked>
-                            <span class="text-sm text-gray-700">Start server automatically after installation</span>
-                        </label>
-                        <label class="flex items-center">
-                            <input type="checkbox" class="mr-3" checked>
-                            <span class="text-sm text-gray-700">Add to Claude Desktop configuration</span>
-                        </label>
-                        <label class="flex items-center">
-                            <input type="checkbox" class="mr-3">
-                            <span class="text-sm text-gray-700">Create desktop shortcut</span>
-                        </label>
+                        <h4 class="font-medium text-gray-900">Environment Variables</h4>
+                        <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                            <div class="flex">
+                                <svg class="w-5 h-5 text-yellow-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg>
+                                <div class="ml-3">
+                                    <h5 class="text-sm font-medium text-yellow-800">Configuration Required</h5>
+                                    <div class="mt-2 text-sm text-yellow-700">
+                                        <p class="mb-2">This server requires environment variables to be configured:</p>
+                                        <ul class="list-disc list-inside space-y-1">
+                                            ${this.parseEnvironmentVariables(server.environmentVariables).map(envVar => {
+                                                const badgeClass = envVar.type === 'required' ? 'text-red-600' : envVar.type === 'default' ? 'text-green-600' : 'text-gray-600';
+                                                const label = envVar.type === 'required' ? 'Required' : envVar.type === 'default' ? 'Default' : 'Optional';
+                                                return `<li><strong>${envVar.name}</strong> <span class="${badgeClass}">(${label})</span>: ${envVar.description || 'No description'}</li>`;
+                                            }).join('')}
+                                        </ul>
+                                        <p class="mt-2 text-xs">You can configure these after installation on the Servers page.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                ` : ''}
+
+                ${server.setupDescription ? `
+                    <div class="space-y-3">
+                        <h4 class="font-medium text-gray-900">Setup Instructions</h4>
+                        <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                            <div class="text-sm text-blue-900 setup-markdown">${this.renderMarkdown(server.setupDescription)}</div>
+                        </div>
+                    </div>
+                ` : ''}
+
+                <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <div class="flex">
+                        <svg class="w-5 h-5 text-blue-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        <div class="ml-3">
+                            <h4 class="text-sm font-medium text-blue-800">Installation Process</h4>
+                            <p class="mt-1 text-sm text-blue-700">This will pull the Docker image and add it to your installed servers. You can configure and run it later from the Servers page.</p>
+                        </div>
                     </div>
                 </div>
 
                 <div class="flex justify-end space-x-3 pt-4 border-t border-gray-200">
-                    <button class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+                    <button id="cancel-install" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
                         Cancel
                     </button>
                     <button id="confirm-install" class="px-4 py-2 text-sm font-medium text-white bg-primary-600 border border-transparent rounded-md hover:bg-primary-700">
-                        Install Server
+                        Install MCP Server Image
                     </button>
                 </div>
             </div>
@@ -703,18 +766,48 @@ export class Registry {
 
         Modal.show(content, {
             title: 'Server Installation',
-            size: 'md'
+            size: 'xl'
         });
 
         setTimeout(() => {
-            document.getElementById('confirm-install')?.addEventListener('click', () => {
+            document.getElementById('cancel-install')?.addEventListener('click', () => {
                 Modal.hide();
-                this.showInstallProgress(server);
+            });
+
+            document.getElementById('confirm-install')?.addEventListener('click', () => {
+                this.performInstallation(server);
             });
         }, 100);
     }
 
-    showInstallProgress(server) {
+    async performInstallation(server) {
+        // Convert frontend server format to backend RegistryServer format
+        const registryServer = {
+            name: server.name,
+            description: server.description,
+            setup_description: server.setupDescription || '',
+            support_url: server.supportURL || '',
+            docker_image: server.dockerImage,
+            version: server.version,
+            license: server.license || '',
+            maintainer: server.author,
+            tags: server.tags || [],
+            architecture: server.architecture || [],
+            health_check: server.healthCheck || {},
+            resource_requirements: server.resourceRequirements || {},
+            docker_command: server.dockerCommand || '',
+            environment_variables: server.environmentVariables || {},
+            ports: server.ports || {},
+            volumes: server.volumes || [],
+            source_registry_name: server.sourceRegistryName,
+            source_registry_url: server.sourceRegistryURL,
+            is_official: server.official
+        };
+
+        this.showInstallProgress(server, registryServer);
+    }
+
+    showInstallProgress(server, registryServer) {
         const content = `
             <div class="space-y-6">
                 <div class="text-center">
@@ -727,27 +820,11 @@ export class Registry {
                     <p class="text-gray-600">Please wait while the server is being installed...</p>
                 </div>
 
-                <div class="space-y-4">
-                    <div class="space-y-2">
-                        <div class="flex justify-between text-sm">
-                            <span class="text-gray-700">Downloading...</span>
-                            <span class="text-gray-500">75%</span>
-                        </div>
-                        <div class="w-full bg-gray-200 rounded-full h-2">
-                            <div class="bg-primary-600 h-2 rounded-full" style="width: 75%"></div>
-                        </div>
-                    </div>
-
-                    <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                        <h4 class="font-medium text-gray-900 mb-2">Installation Log</h4>
-                        <div class="text-xs text-gray-700 font-mono space-y-1">
-                            <div>✓ Downloading ${server.name} v${server.version}</div>
-                            <div>✓ Verifying package integrity</div>
-                            <div>✓ Installing dependencies</div>
-                            <div class="text-blue-600">→ Configuring server settings</div>
-                            <div class="text-gray-400">- Starting server process</div>
-                            <div class="text-gray-400">- Updating Claude configuration</div>
-                        </div>
+                <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                    <h4 class="font-medium text-gray-900 mb-2">Installation Log</h4>
+                    <div id="install-log" class="text-xs text-gray-700 font-mono space-y-1 max-h-32 overflow-y-auto">
+                        <div class="text-blue-600">→ Starting installation process...</div>
+                        <div class="text-blue-600">→ Pulling Docker image: ${server.dockerImage}</div>
                     </div>
                 </div>
 
@@ -765,19 +842,108 @@ export class Registry {
             closeButton: false
         });
 
-        // Simulate installation completion
-        setTimeout(() => {
-            Modal.hide();
-            this.showInstallComplete(server);
-            
-            // Update server status
-            const serverToUpdate = this.servers.find(s => s.id === server.id);
-            if (serverToUpdate) {
-                serverToUpdate.installed = true;
-                this.filterServers();
-                this.updateUI();
+        // Start the actual installation process
+        this.executeInstallation(server, registryServer);
+    }
+
+    async executeInstallation(server, registryServer) {
+        const logContainer = document.getElementById('install-log');
+        
+        const addLogEntry = (message, type = 'info') => {
+            if (logContainer) {
+                const logEntry = document.createElement('div');
+                logEntry.className = type === 'error' ? 'text-red-600' : type === 'success' ? 'text-green-600' : 'text-blue-600';
+                logEntry.textContent = type === 'error' ? `✗ ${message}` : type === 'success' ? `✓ ${message}` : `→ ${message}`;
+                logContainer.appendChild(logEntry);
+                logContainer.scrollTop = logContainer.scrollHeight;
             }
-        }, 3000);
+        };
+
+        try {
+            addLogEntry('Validating server configuration...');
+            
+            // Call the backend InstallServer method
+            addLogEntry('Downloading Docker image (this may take a few minutes)...');
+            await window.go.main.App.InstallServer(registryServer);
+            
+            addLogEntry('Docker image downloaded successfully', 'success');
+            addLogEntry('Server added to installed servers', 'success');
+            addLogEntry('Installation completed successfully!', 'success');
+            
+            // Wait a moment to show the success messages
+            setTimeout(() => {
+                Modal.hide();
+                this.showInstallComplete(server);
+                
+                // Update server status in the UI
+                const serverToUpdate = this.servers.find(s => s.id === server.id);
+                if (serverToUpdate) {
+                    serverToUpdate.installed = true;
+                    this.filterServers();
+                }
+                
+                // Reload servers to get the updated list
+                this.loadServers();
+            }, 2000);
+
+        } catch (error) {
+            console.error('Installation failed:', error);
+            addLogEntry(`Installation failed: ${error.message}`, 'error');
+            
+            // Show error state and enable retry
+            setTimeout(() => {
+                const content = `
+                    <div class="space-y-6">
+                        <div class="text-center">
+                            <div class="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                                <svg class="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg>
+                            </div>
+                            <h3 class="text-lg font-semibold text-gray-900">Installation Failed</h3>
+                            <p class="text-gray-600">There was an error installing ${server.name}.</p>
+                        </div>
+
+                        <div class="bg-red-50 border border-red-200 rounded-lg p-4">
+                            <div class="flex">
+                                <svg class="w-5 h-5 text-red-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg>
+                                <div class="ml-3">
+                                    <h4 class="text-sm font-medium text-red-800">Error Details</h4>
+                                    <p class="mt-1 text-sm text-red-700">${error.message}</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="flex justify-end space-x-3 pt-4 border-t border-gray-200">
+                            <button id="close-error" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+                                Close
+                            </button>
+                            <button id="retry-install" class="px-4 py-2 text-sm font-medium text-white bg-primary-600 border border-transparent rounded-md hover:bg-primary-700">
+                                Try Again
+                            </button>
+                        </div>
+                    </div>
+                `;
+
+                Modal.show(content, {
+                    title: 'Installation Failed',
+                    size: 'md'
+                });
+
+                setTimeout(() => {
+                    document.getElementById('close-error')?.addEventListener('click', () => {
+                        Modal.hide();
+                    });
+
+                    document.getElementById('retry-install')?.addEventListener('click', () => {
+                        Modal.hide();
+                        this.installServer(server.id);
+                    });
+                }, 100);
+            }, 3000);
+        }
     }
 
     showInstallComplete(server) {
@@ -790,7 +956,7 @@ export class Registry {
                         </svg>
                     </div>
                     <h3 class="text-lg font-semibold text-gray-900">Installation Complete!</h3>
-                    <p class="text-gray-600">${server.name} has been successfully installed and is ready to use.</p>
+                    <p class="text-gray-600">${server.name} has been successfully installed.</p>
                 </div>
 
                 <div class="bg-green-50 border border-green-200 rounded-lg p-4">
@@ -801,20 +967,20 @@ export class Registry {
                         <div class="ml-3">
                             <h4 class="text-sm font-medium text-green-800">What's Next?</h4>
                             <ul class="mt-2 text-sm text-green-700 space-y-1">
-                                <li>• Server is running and available on port 8005</li>
-                                <li>• Configuration has been added to Claude Desktop</li>
-                                <li>• You can now use this server in your conversations</li>
+                                <li>• Docker image has been downloaded and is ready to use</li>
+                                <li>• Server has been added to your installed servers list</li>
+                                <li>• Go to the Servers page to create and configure a container instance</li>
                             </ul>
                         </div>
                     </div>
                 </div>
 
                 <div class="flex justify-end space-x-3 pt-4 border-t border-gray-200">
-                    <button id="view-servers" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
-                        View All Servers
+                    <button id="close-success" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+                        Close
                     </button>
-                    <button id="configure-server" class="px-4 py-2 text-sm font-medium text-white bg-primary-600 border border-transparent rounded-md hover:bg-primary-700">
-                        Configure Server
+                    <button id="view-servers" class="px-4 py-2 text-sm font-medium text-white bg-primary-600 border border-transparent rounded-md hover:bg-primary-700">
+                        Go to Servers
                     </button>
                 </div>
             </div>
@@ -826,14 +992,13 @@ export class Registry {
         });
 
         setTimeout(() => {
+            document.getElementById('close-success')?.addEventListener('click', () => {
+                Modal.hide();
+            });
+
             document.getElementById('view-servers')?.addEventListener('click', () => {
                 Modal.hide();
                 window.location.hash = 'servers';
-            });
-
-            document.getElementById('configure-server')?.addEventListener('click', () => {
-                Modal.hide();
-                this.configureServer(server.id);
             });
         }, 100);
     }
@@ -866,11 +1031,11 @@ export class Registry {
 
                 <div class="space-y-3">
                     <label class="flex items-center">
-                        <input type="checkbox" class="mr-3">
+                        <input type="checkbox" id="remove-config-data" class="mr-3">
                         <span class="text-sm text-gray-700">Remove configuration data</span>
                     </label>
                     <label class="flex items-center">
-                        <input type="checkbox" class="mr-3">
+                        <input type="checkbox" id="remove-claude-config" class="mr-3">
                         <span class="text-sm text-gray-700">Remove from Claude Desktop configuration</span>
                     </label>
                 </div>
@@ -892,14 +1057,128 @@ export class Registry {
         });
 
         setTimeout(() => {
-            document.getElementById('confirm-uninstall')?.addEventListener('click', () => {
-                Modal.hide();
-                const serverToUpdate = this.servers.find(s => s.id === server.id);
-                if (serverToUpdate) {
-                    serverToUpdate.installed = false;
-                    this.filterServers();
-                    this.updateUI();
+            document.getElementById('confirm-uninstall')?.addEventListener('click', async () => {
+                const confirmBtn = document.getElementById('confirm-uninstall');
+                const cancelBtn = document.querySelector('.px-4.py-2.text-sm.font-medium.text-gray-700');
+                
+                // Set loading state
+                confirmBtn.disabled = true;
+                if (cancelBtn) cancelBtn.disabled = true;
+                confirmBtn.innerHTML = `
+                    <svg class="w-4 h-4 mr-2 inline animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                    </svg>
+                    Uninstalling...
+                `;
+                
+                try {
+                    // Check if user wants to remove configuration data
+                    const removeConfigData = document.getElementById('remove-config-data')?.checked || false;
+                    
+                    // Find the installed server by Docker image
+                    const installedServers = await window.go.main.App.GetInstalledServers();
+                    const installedServer = installedServers.find(installed => installed.docker_image === server.dockerImage);
+                    
+                    if (installedServer) {
+                        // If user checked "Remove configuration data", remove configured servers first
+                        let removedConfiguredServers = false;
+                        if (removeConfigData) {
+                            try {
+                                const configuredServers = await window.go.main.App.GetConfiguredServers();
+                                const relatedConfiguredServers = configuredServers.filter(
+                                    configured => configured.installed_server_id === installedServer.id
+                                );
+                                
+                                // Remove each configured server (this will also remove the Docker containers)
+                                for (const configuredServer of relatedConfiguredServers) {
+                                    if (configuredServer.container_id) {
+                                        await window.go.main.App.RemoveContainer(configuredServer.container_id, true);
+                                    }
+                                }
+                                
+                                if (relatedConfiguredServers.length > 0) {
+                                    removedConfiguredServers = true;
+                                }
+                            } catch (configError) {
+                                console.warn('Warning: Failed to remove some configured servers:', configError);
+                                // Continue with uninstall even if configured server removal fails
+                            }
+                        }
+                        
+                        // Call backend to remove installed server and Docker image
+                        await window.go.main.App.RemoveInstalledServer(installedServer.id, true);
+                        
+                        // Update local UI state
+                        const serverToUpdate = this.servers.find(s => s.id === server.id);
+                        if (serverToUpdate) {
+                            serverToUpdate.installed = false;
+                        }
+                        
+                        Modal.hide();
+                        this.showUninstallComplete(server, removedConfiguredServers);
+                        this.filterServers();
+                        this.updateUI();
+                    } else {
+                        throw new Error('Installed server not found');
+                    }
+                } catch (error) {
+                    console.error('Uninstall failed:', error);
+                    
+                    // Reset button state
+                    confirmBtn.disabled = false;
+                    if (cancelBtn) cancelBtn.disabled = false;
+                    confirmBtn.innerHTML = 'Uninstall Server';
+                    
+                    alert('Failed to uninstall server: ' + error.message);
                 }
+            });
+        }, 100);
+    }
+
+    showUninstallComplete(server, removedConfigData = false) {
+        const content = `
+            <div class="space-y-6">
+                <div class="text-center">
+                    <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                        </svg>
+                    </div>
+                    <h3 class="text-lg font-semibold text-gray-900">Uninstall Complete!</h3>
+                    <p class="text-gray-600">${server.name} has been successfully uninstalled.</p>
+                </div>
+
+                <div class="bg-green-50 border border-green-200 rounded-lg p-4">
+                    <div class="flex">
+                        <svg class="w-5 h-5 text-green-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                        </svg>
+                        <div class="ml-3">
+                            <h4 class="text-sm font-medium text-green-800">Cleanup Complete</h4>
+                            <ul class="mt-2 text-sm text-green-700 space-y-1">
+                                <li>• MCP server image has been removed from your system</li>
+                                ${removedConfigData ? '<li>• All configured containers and their data have been removed</li>' : ''}
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex justify-end space-x-3 pt-4 border-t border-gray-200">
+                    <button id="close-uninstall-success" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+                        Close
+                    </button>
+                </div>
+            </div>
+        `;
+
+        Modal.show(content, {
+            title: 'Uninstall Complete',
+            size: 'md'
+        });
+
+        setTimeout(() => {
+            document.getElementById('close-uninstall-success')?.addEventListener('click', () => {
+                Modal.hide();
             });
         }, 100);
     }
@@ -1260,6 +1539,75 @@ export class Registry {
                 }
             });
         }, 100);
+    }
+
+    // Parse environment variables from nested registry structure
+    parseEnvironmentVariables(environmentVariables) {
+        let envVarsConfig = [];
+        
+        if (environmentVariables) {
+            // Handle required variables
+            if (environmentVariables.required && Array.isArray(environmentVariables.required)) {
+                environmentVariables.required.forEach(envVar => {
+                    envVarsConfig.push({
+                        name: envVar.name,
+                        value: envVar.value || '',
+                        description: envVar.description || '',
+                        required: true,
+                        type: 'required'
+                    });
+                });
+            }
+            
+            // Handle default variables
+            if (environmentVariables.default && Array.isArray(environmentVariables.default)) {
+                environmentVariables.default.forEach(envVar => {
+                    envVarsConfig.push({
+                        name: envVar.name,
+                        value: envVar.value || '',
+                        description: envVar.description || '',
+                        required: false,
+                        type: 'default'
+                    });
+                });
+            }
+            
+            // Handle optional variables
+            if (environmentVariables.optional && Array.isArray(environmentVariables.optional)) {
+                environmentVariables.optional.forEach(envVar => {
+                    envVarsConfig.push({
+                        name: envVar.name,
+                        value: envVar.value || '',
+                        description: envVar.description || '',
+                        required: false,
+                        type: 'optional'
+                    });
+                });
+            }
+        }
+        
+        return envVarsConfig;
+    }
+
+    // Simple markdown renderer for basic formatting
+    renderMarkdown(text) {
+        if (!text) return '';
+        
+        return text
+            // Bold text **bold**
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            // Italic text *italic*
+            .replace(/\*(.*?)\*/g, '<em>$1</em>')
+            // Code blocks `code`
+            .replace(/`([^`]+)`/g, '<code class="bg-gray-100 px-1 py-0.5 rounded text-xs font-mono">$1</code>')
+            // Links [text](url)
+            .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" class="text-blue-600 hover:text-blue-800 underline">$1</a>')
+            // Line breaks
+            .replace(/\n/g, '<br>')
+            // Headers ### Header
+            .replace(/^### (.*$)/gm, '<h3 class="font-semibold text-base mt-2 mb-1">$1</h3>')
+            .replace(/^## (.*$)/gm, '<h2 class="font-semibold text-lg mt-3 mb-2">$1</h2>')
+            .replace(/^# (.*$)/gm, '<h1 class="font-bold text-xl mt-4 mb-3">$1</h1>');
     }
 
     // Helper methods for form error handling

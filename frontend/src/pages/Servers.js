@@ -1,7 +1,10 @@
 import Modal from '../components/Modal.js';
+import { BrowserOpenURL } from '../../wailsjs/runtime/runtime.js';
 
 export class Servers {
     constructor() {
+        this.servers = [];
+        this.loading = false;
         this.mockServers = [
             {
                 id: 1,
@@ -66,11 +69,17 @@ export class Servers {
                                 <p class="text-gray-600">Manage your MCP servers</p>
                             </div>
                             <div class="flex space-x-3 ml-6 pr-6">
-                                <button id="refresh-servers-btn" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500">
-                                    <svg class="w-4 h-4 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <button id="refresh-servers-btn" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500" ${this.loading ? 'disabled' : ''}>
+                                    <svg class="w-4 h-4 mr-2 inline ${this.loading ? 'animate-spin' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
                                     </svg>
-                                    Refresh
+                                    ${this.loading ? 'Loading...' : 'Refresh'}
+                                </button>
+                                <button id="manage-installed-btn" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500">
+                                    <svg class="w-4 h-4 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
+                                    </svg>
+                                    Manage Installed
                                 </button>
                                 <button id="add-new-server-btn" class="px-4 py-2 text-sm font-medium text-white bg-primary-600 border border-transparent rounded-md hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500">
                                     <svg class="w-4 h-4 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -112,7 +121,9 @@ export class Servers {
                 <!-- Servers List -->
                 <div class="flex-1 overflow-y-auto p-6">
                     <div class="grid grid-cols-1 gap-6">
-                        ${this.mockServers.map(server => `
+                        ${this.loading ? this.renderLoadingState() : ''}
+                        ${this.servers.length === 0 && !this.loading ? this.renderEmptyState() : ''}
+                        ${this.servers.map(server => `
                             <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
                                 <div class="p-6">
                                     <div class="flex items-start justify-between">
@@ -206,13 +217,42 @@ export class Servers {
         `;
     }
 
+    // Simple markdown renderer for basic formatting
+    renderMarkdown(text) {
+        if (!text) return '';
+        
+        return text
+            // Bold text **bold**
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            // Italic text *italic*
+            .replace(/\*(.*?)\*/g, '<em>$1</em>')
+            // Code blocks `code`
+            .replace(/`([^`]+)`/g, '<code class="bg-gray-100 px-1 py-0.5 rounded text-xs font-mono">$1</code>')
+            // Links [text](url)
+            .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" class="text-blue-600 hover:text-blue-800 underline external-link" data-url="$2">$1</a>')
+            // Line breaks
+            .replace(/\n/g, '<br>')
+            // Headers ### Header
+            .replace(/^### (.*$)/gm, '<h3 class="font-semibold text-base mt-2 mb-1">$1</h3>')
+            .replace(/^## (.*$)/gm, '<h2 class="font-semibold text-lg mt-3 mb-2">$1</h2>')
+            .replace(/^# (.*$)/gm, '<h1 class="font-bold text-xl mt-4 mb-3">$1</h1>');
+    }
+
     attachEventListeners() {
+        // Load servers on page load
+        this.loadServers();
+
         // Header buttons
         const refreshBtn = document.getElementById('refresh-servers-btn');
+        const manageInstalledBtn = document.getElementById('manage-installed-btn');
         const addServerBtn = document.getElementById('add-new-server-btn');
 
         if (refreshBtn) {
             refreshBtn.addEventListener('click', () => this.refreshServers());
+        }
+
+        if (manageInstalledBtn) {
+            manageInstalledBtn.addEventListener('click', () => this.showManageInstalledServers());
         }
 
         if (addServerBtn) {
@@ -273,6 +313,176 @@ export class Servers {
         }
     }
 
+    renderLoadingState() {
+        return `
+            <div class="flex items-center justify-center py-12">
+                <div class="text-center">
+                    <svg class="animate-spin -ml-1 mr-3 h-8 w-8 text-primary-600 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <p class="text-gray-600 mt-2">Loading servers...</p>
+                </div>
+            </div>
+        `;
+    }
+
+    renderEmptyState() {
+        return `
+            <div class="text-center py-12">
+                <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2"></path>
+                </svg>
+                <h3 class="mt-2 text-sm font-medium text-gray-900">No servers</h3>
+                <p class="mt-1 text-sm text-gray-500">Get started by adding your first server.</p>
+                <div class="mt-6">
+                    <button id="add-server-empty-state" class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500">
+                        <svg class="-ml-1 mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                        </svg>
+                        Add Server
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+
+    async loadServers() {
+        this.loading = true;
+        this.updateUI();
+
+        try {
+            // Load both Docker containers and configured servers
+            const [containers, configuredServers] = await Promise.all([
+                window.go.main.App.GetManagedContainers(),
+                window.go.main.App.GetConfiguredServers()
+            ]);
+
+            // Filter containers to only show those that exist in the config file
+            const configuredContainerIds = new Set(
+                (configuredServers || []).map(server => server.container_id).filter(id => id)
+            );
+
+            this.servers = (containers || []).filter(container => {
+                // Check if container ID matches any configured server ID (handle both short and full IDs)
+                return Array.from(configuredContainerIds).some(configId => 
+                    configId === container.id || configId.startsWith(container.id) || container.id.startsWith(configId)
+                );
+            });
+        } catch (error) {
+            console.error('Failed to load servers:', error);
+            this.servers = [];
+        }
+
+        this.loading = false;
+        this.updateUI();
+    }
+
+    updateUI() {
+        const mainContent = document.getElementById('main-content');
+        if (mainContent) {
+            mainContent.innerHTML = this.render();
+            this.attachEventListenersAfterRender();
+        }
+    }
+
+    attachEventListenersAfterRender() {
+        // Use event delegation for all buttons to avoid duplicate listeners
+        const mainContent = document.getElementById('main-content');
+        if (mainContent) {
+            // Remove any existing listeners to prevent duplicates
+            mainContent.replaceWith(mainContent.cloneNode(true));
+            const newMainContent = document.getElementById('main-content');
+            
+            newMainContent.addEventListener('click', (e) => {
+                // Header buttons
+                if (e.target.id === 'refresh-servers-btn' || e.target.closest('#refresh-servers-btn')) {
+                    this.refreshServers();
+                    return;
+                }
+                
+                if (e.target.id === 'manage-installed-btn' || e.target.closest('#manage-installed-btn')) {
+                    this.showManageInstalledServers();
+                    return;
+                }
+                
+                if (e.target.id === 'add-new-server-btn' || e.target.closest('#add-new-server-btn') || 
+                    e.target.id === 'add-server-empty-state' || e.target.closest('#add-server-empty-state')) {
+                    this.showAddServerWizard();
+                    return;
+                }
+                
+                // Server action buttons
+                if (e.target.classList.contains('server-start-btn')) {
+                    const serverId = e.target.getAttribute('data-server-id');
+                    this.startServer(serverId);
+                    return;
+                }
+                
+                if (e.target.classList.contains('server-stop-btn')) {
+                    const serverId = e.target.getAttribute('data-server-id');
+                    this.stopServer(serverId);
+                    return;
+                }
+                
+                if (e.target.classList.contains('server-restart-btn')) {
+                    const serverId = e.target.getAttribute('data-server-id');
+                    this.restartServer(serverId);
+                    return;
+                }
+
+                if (e.target.classList.contains('server-debug-btn')) {
+                    const serverId = e.target.getAttribute('data-server-id');
+                    this.debugServer(serverId);
+                    return;
+                }
+
+                if (e.target.closest('.server-menu-btn')) {
+                    const serverId = e.target.closest('.server-menu-btn').getAttribute('data-server-id');
+                    this.showServerMenu(serverId, e.target);
+                    return;
+                }
+                
+                if (e.target.classList.contains('server-details-toggle')) {
+                    e.preventDefault();
+                    const serverId = e.target.getAttribute('data-server-id');
+                    this.toggleServerDetails(serverId);
+                    return;
+                }
+                
+                // Handle external links in markdown content
+                if (e.target.classList.contains('external-link')) {
+                    e.preventDefault();
+                    const url = e.target.getAttribute('data-url');
+                    
+                    if (url) {
+                        try {
+                            // Use Wails runtime to open URL in system browser
+                            BrowserOpenURL(url);
+                        } catch (error) {
+                            // Fallback for web version or if Wails runtime not available
+                            window.open(url, '_blank');
+                        }
+                    }
+                    return;
+                }
+            });
+
+            // Handle form elements separately as they need different event types
+            newMainContent.addEventListener('change', (e) => {
+                if (e.target.id === 'status-filter') {
+                    this.filterServers();
+                }
+            });
+
+            newMainContent.addEventListener('input', (e) => {
+                if (e.target.id === 'server-search') {
+                    this.filterServers();
+                }
+            });
+        }
+    }
+
     getStatusBgColor(status) {
         switch (status) {
             case 'running': return 'bg-green-100';
@@ -300,72 +510,139 @@ export class Servers {
         }
     }
 
-    refreshServers() {
-        console.log('Refreshing servers...');
+    async refreshServers() {
+        await this.loadServers();
     }
 
-    startServer(serverId) {
-        console.log('Starting server:', serverId);
+    async startServer(serverId) {
+        try {
+            await window.go.main.App.StartContainer(serverId);
+            await this.loadServers(); // Refresh the list
+        } catch (error) {
+            console.error('Failed to start server:', error);
+            this.showErrorModal('Start Server Failed', `Failed to start server: ${error.message || error}`);
+        }
     }
 
-    stopServer(serverId) {
-        console.log('Stopping server:', serverId);
+    async stopServer(serverId) {
+        try {
+            await window.go.main.App.StopContainer(serverId);
+            await this.loadServers(); // Refresh the list
+        } catch (error) {
+            console.error('Failed to stop server:', error);
+            this.showErrorModal('Stop Server Failed', `Failed to stop server: ${error.message || error}`);
+        }
     }
 
-    restartServer(serverId) {
-        console.log('Restarting server:', serverId);
+    async restartServer(serverId) {
+        try {
+            await window.go.main.App.RestartContainer(serverId);
+            await this.loadServers(); // Refresh the list
+        } catch (error) {
+            console.error('Failed to restart server:', error);
+            this.showErrorModal('Restart Server Failed', `Failed to restart server: ${error.message || error}`);
+        }
     }
 
-    debugServer(serverId) {
-        const server = this.mockServers.find(s => s.id == serverId);
+    showErrorModal(title, message) {
         const content = `
             <div class="space-y-4">
                 <div class="bg-red-50 border border-red-200 rounded-lg p-4">
-                    <h4 class="font-medium text-red-800 mb-2">Error Details</h4>
-                    <p class="text-sm text-red-700">Port 8004 is already in use by another process</p>
+                    <div class="flex">
+                        <svg class="w-5 h-5 text-red-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        <div class="ml-3">
+                            <p class="text-sm text-red-800">${message}</p>
+                        </div>
+                    </div>
                 </div>
-                <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                    <h4 class="font-medium text-gray-900 mb-2">Logs (last 50 lines)</h4>
-                    <pre class="text-xs text-gray-700 whitespace-pre-wrap font-mono">2024-01-15 10:30:45 [INFO] Starting Email Handler server
-2024-01-15 10:30:45 [ERROR] Failed to bind to port 8004: address already in use
-2024-01-15 10:30:45 [ERROR] Server startup failed</pre>
-                </div>
-                <div class="flex space-x-3">
-                    <button class="px-4 py-2 text-sm font-medium text-white bg-primary-600 border border-transparent rounded-md hover:bg-primary-700">
-                        Change Port
-                    </button>
-                    <button class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
-                        View Full Logs
+                <div class="flex justify-end">
+                    <button class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50" onclick="Modal.hide()">
+                        Close
                     </button>
                 </div>
             </div>
         `;
 
         Modal.show(content, {
-            title: `Debug ${server.name}`,
-            size: 'lg'
+            title: title,
+            size: 'md'
         });
     }
 
+    async debugServer(serverId) {
+        const server = this.servers.find(s => s.id === serverId);
+        if (!server) {
+            this.showErrorModal('Server Not Found', 'Could not find server information.');
+            return;
+        }
+
+        try {
+            const logs = await window.go.main.App.GetContainerLogs(serverId, 50);
+            
+            const content = `
+                <div class="space-y-4">
+                    <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                        <h4 class="font-medium text-gray-900 mb-2">Container Information</h4>
+                        <dl class="grid grid-cols-2 gap-2 text-sm">
+                            <div class="flex justify-between">
+                                <dt class="text-gray-600">Status:</dt>
+                                <dd class="text-gray-900">${server.state}</dd>
+                            </div>
+                            <div class="flex justify-between">
+                                <dt class="text-gray-600">Image:</dt>
+                                <dd class="text-gray-900">${server.image}</dd>
+                            </div>
+                            <div class="flex justify-between">
+                                <dt class="text-gray-600">Port:</dt>
+                                <dd class="text-gray-900">${server.port || 'Not configured'}</dd>
+                            </div>
+                            <div class="flex justify-between">
+                                <dt class="text-gray-600">Uptime:</dt>
+                                <dd class="text-gray-900">${server.uptime}</dd>
+                            </div>
+                        </dl>
+                    </div>
+                    <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                        <h4 class="font-medium text-gray-900 mb-2">Recent Logs (last 50 lines)</h4>
+                        <pre class="text-xs text-gray-700 whitespace-pre-wrap font-mono max-h-64 overflow-y-auto">${logs || 'No logs available'}</pre>
+                    </div>
+                    <div class="flex justify-end space-x-3">
+                        <button class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50" onclick="Modal.hide()">
+                            Close
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            Modal.show(content, {
+                title: `Debug ${server.name}`,
+                size: 'lg'
+            });
+        } catch (error) {
+            this.showErrorModal('Debug Failed', `Failed to get server information: ${error.message || error}`);
+        }
+    }
+
     showServerMenu(serverId, target) {
-        const server = this.mockServers.find(s => s.id == serverId);
+        const server = this.servers.find(s => s.id === serverId);
+        if (!server) return;
+
         const content = `
             <div class="py-1">
-                <button class="configure-server-btn w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" data-server-id="${serverId}">
+                <button class="configure-server-btn w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" data-server-id="${serverId}" onclick="Modal.hide()">
                     Configure
                 </button>
-                <button class="view-logs-btn w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" data-server-id="${serverId}">
+                <button class="view-logs-btn w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" data-server-id="${serverId}" onclick="Modal.hide(); window.serversInstance.debugServer('${serverId}')">
                     View Logs
                 </button>
                 <button class="export-config-btn w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" data-server-id="${serverId}">
                     Export Config
                 </button>
-                <button class="update-server-btn w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" data-server-id="${serverId}">
-                    Update
-                </button>
                 <div class="border-t border-gray-100 my-1"></div>
                 <button class="remove-server-btn w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50" data-server-id="${serverId}">
-                    Remove Server
+                    Remove Container
                 </button>
             </div>
         `;
@@ -374,6 +651,98 @@ export class Servers {
             title: `${server.name} Actions`,
             size: 'sm'
         });
+
+        // Add event listeners for menu buttons
+        setTimeout(() => {
+            document.querySelector('.export-config-btn')?.addEventListener('click', () => {
+                Modal.hide();
+                // TODO: Implement export config functionality
+            });
+
+            document.querySelector('.remove-server-btn')?.addEventListener('click', () => {
+                Modal.hide();
+                this.removeServer(serverId);
+            });
+        }, 100);
+    }
+
+    async removeServer(serverId) {
+        const server = this.servers.find(s => s.id === serverId);
+        if (!server) return;
+
+        const confirmContent = `
+            <div class="space-y-4">
+                <p class="text-gray-600">Are you sure you want to remove the container "${server.name}"? This action cannot be undone.</p>
+                <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                    <div class="flex">
+                        <svg class="w-5 h-5 text-yellow-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
+                        </svg>
+                        <div class="ml-3">
+                            <p class="text-sm text-yellow-800">This will stop and remove the Docker container, but the image will remain on your system.</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex justify-end space-x-3">
+                    <button id="cancel-remove-btn" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+                        Cancel
+                    </button>
+                    <button id="confirm-remove-btn" class="px-4 py-2 text-sm font-medium text-white bg-red-600 border border-transparent rounded-md hover:bg-red-700">
+                        Remove Container
+                    </button>
+                </div>
+            </div>
+        `;
+
+        Modal.show(confirmContent, {
+            title: 'Remove Container',
+            size: 'md'
+        });
+
+        // Add event listeners for confirmation modal buttons
+        setTimeout(() => {
+            document.getElementById('cancel-remove-btn')?.addEventListener('click', () => {
+                Modal.hide();
+            });
+
+            document.getElementById('confirm-remove-btn')?.addEventListener('click', () => {
+                Modal.hide();
+                this.confirmRemoveServer(serverId);
+            });
+        }, 100);
+    }
+
+    async confirmRemoveServer(serverId) {
+        const server = this.servers.find(s => s.id === serverId);
+        if (!server) {
+            this.showErrorModal('Remove Container Failed', 'Server not found.');
+            return;
+        }
+
+        try {
+            console.log('Attempting to remove container:', serverId);
+            
+            // The serverId is actually the container ID
+            await window.go.main.App.RemoveContainer(serverId, true); // Force remove
+            
+            console.log('Container removal succeeded, refreshing servers list');
+            await this.loadServers(); // Refresh the list
+            
+            // Show success message
+            this.showSuccessModal('Container Removed', `Container "${server.name}" has been successfully removed.`);
+            
+        } catch (error) {
+            console.error('Failed to remove container:', error);
+            
+            let errorMessage = 'An unknown error occurred.';
+            if (error && error.message) {
+                errorMessage = error.message;
+            } else if (typeof error === 'string') {
+                errorMessage = error;
+            }
+            
+            this.showErrorModal('Remove Container Failed', `Failed to remove container "${server.name}": ${errorMessage}`);
+        }
     }
 
     toggleServerDetails(serverId) {
@@ -402,82 +771,767 @@ export class Servers {
         console.log('Filtering servers...');
     }
 
-    showAddServerWizard() {
+    async showAddServerWizard() {
+        try {
+            // Get installed servers (those with pulled images)
+            const installedServers = await window.go.main.App.GetInstalledServers();
+            
+            const content = `
+                <div class="space-y-6">
+                    <div class="text-center">
+                        <p class="text-gray-600">How would you like to add a new MCP server?</p>
+                    </div>
+                    
+                    <div class="grid grid-cols-1 gap-4">
+                        ${installedServers.length == 0 ? `
+                        <button id="wizard-registry" class="p-6 text-left border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+                            <div class="flex items-center space-x-4">
+                                <div class="w-12 h-12 bg-primary-100 rounded-lg flex items-center justify-center">
+                                    <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                                    </svg>
+                                </div>
+                                <div>
+                                    <h3 class="text-lg font-medium text-gray-900">Browse Registry</h3>
+                                    <p class="text-sm text-gray-600">There are no installed servers. Browse the registry to install a server.</p>
+                                </div>
+                            </div>
+                        </button>
+                        ` : ''}
+
+                        ${installedServers.length > 0 ? `
+                        <button id="wizard-installed" class="p-6 text-left border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+                            <div class="flex items-center space-x-4">
+                                <div class="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
+                                    <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                                    </svg>
+                                </div>
+                                <div>
+                                    <h3 class="text-lg font-medium text-gray-900">Create from Installed (${installedServers.length})</h3>
+                                    <p class="text-sm text-gray-600">Create MCP Servers from already installed server images</p>
+                                </div>
+                            </div>
+                        </button>
+                        ` : ''}
+
+                        <button id="wizard-manual" class="p-6 text-left border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+                            <div class="flex items-center space-x-4">
+                                <div class="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center">
+                                    <svg class="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                                    </svg>
+                                </div>
+                                <div>
+                                    <h3 class="text-lg font-medium text-gray-900">Manual Docker Setup</h3>
+                                    <p class="text-sm text-gray-600">Add a custom Docker container configuration</p>
+                                </div>
+                            </div>
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            Modal.show(content, {
+                title: 'Add New Server',
+                size: 'lg'
+            });
+
+            // Add event listeners for wizard options
+            setTimeout(() => {
+                document.getElementById('wizard-registry')?.addEventListener('click', () => {
+                    Modal.hide();
+                    window.location.hash = 'registry';
+                });
+
+                document.getElementById('wizard-installed')?.addEventListener('click', () => {
+                    Modal.hide();
+                    this.showInstalledServersWizard(installedServers);
+                });
+
+                document.getElementById('wizard-manual')?.addEventListener('click', () => {
+                    Modal.hide();
+                    this.showManualInstallWizard();
+                });
+            }, 100);
+        } catch (error) {
+            console.error('Failed to load installed servers:', error);
+            this.showErrorModal('Load Failed', 'Failed to load installed servers list.');
+        }
+    }
+
+    showInstalledServersWizard(installedServers) {
         const content = `
             <div class="space-y-6">
                 <div class="text-center">
-                    <p class="text-gray-600">How would you like to add a new MCP server?</p>
+                    <p class="text-gray-600">Choose from your installed server images to create a new MCP Server:</p>
                 </div>
                 
-                <div class="grid grid-cols-1 gap-4">
-                    <button id="wizard-registry" class="p-6 text-left border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-                        <div class="flex items-center space-x-4">
-                            <div class="w-12 h-12 bg-primary-100 rounded-lg flex items-center justify-center">
-                                <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-                                </svg>
+                <div class="max-h-96 overflow-y-auto">
+                    <div class="grid grid-cols-1 gap-3">
+                        ${installedServers.map(server => `
+                            <div class="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer server-option" data-server-id="${server.id}">
+                                <div class="flex items-center space-x-3">
+                                    <div class="w-10 h-10 bg-primary-100 rounded-lg flex items-center justify-center">
+                                        <svg class="w-5 h-5 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2"></path>
+                                        </svg>
+                                    </div>
+                                    <div class="flex-1">
+                                        <h3 class="font-medium text-gray-900">${server.name}</h3>
+                                        <p class="text-sm text-gray-600">${server.docker_image}</p>
+                                        <p class="text-xs text-gray-500">Installed: ${new Date(server.install_date).toLocaleDateString()}</p>
+                                    </div>
+                                    <div class="text-right">
+                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                            Installed
+                                        </span>
+                                    </div>
+                                </div>
                             </div>
-                            <div>
-                                <h3 class="text-lg font-medium text-gray-900">Browse Registry</h3>
-                                <p class="text-sm text-gray-600">Install from the official MCP registry</p>
-                            </div>
-                        </div>
-                    </button>
+                        `).join('')}
+                    </div>
+                </div>
 
-                    <button id="wizard-manual" class="p-6 text-left border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-                        <div class="flex items-center space-x-4">
-                            <div class="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
-                                <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
-                                </svg>
-                            </div>
-                            <div>
-                                <h3 class="text-lg font-medium text-gray-900">Manual Installation</h3>
-                                <p class="text-sm text-gray-600">Add a custom server configuration</p>
-                            </div>
-                        </div>
-                    </button>
-
-                    <button id="wizard-import" class="p-6 text-left border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-                        <div class="flex items-center space-x-4">
-                            <div class="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
-                                <svg class="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"></path>
-                                </svg>
-                            </div>
-                            <div>
-                                <h3 class="text-lg font-medium text-gray-900">Import Configuration</h3>
-                                <p class="text-sm text-gray-600">Import from a config file or URL</p>
-                            </div>
-                        </div>
+                <div class="flex justify-end space-x-3">
+                    <button class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50" onclick="Modal.hide()">
+                        Cancel
                     </button>
                 </div>
             </div>
         `;
 
         Modal.show(content, {
-            title: 'Add New Server',
+            title: 'Create MCP Server from Installed Images',
             size: 'lg'
         });
 
-        // Add event listeners for wizard options
+        // Add click handlers for server options
         setTimeout(() => {
-            document.getElementById('wizard-registry')?.addEventListener('click', () => {
+            document.querySelectorAll('.server-option').forEach(option => {
+                option.addEventListener('click', () => {
+                    const serverId = option.getAttribute('data-server-id');
+                    const server = installedServers.find(s => s.id === serverId);
+                    if (server) {
+                        Modal.hide();
+                        this.showServerConfigurationWizard(server);
+                    }
+                });
+            });
+        }, 100);
+    }
+
+    async showManageInstalledServers() {
+        try {
+            // Get installed servers with version information
+            const serversWithVersionInfo = await window.go.main.App.GetInstalledServersWithVersionCheck();
+            
+            if (serversWithVersionInfo.length === 0) {
+                this.showEmptyInstalledServersModal();
+                return;
+            }
+
+            const content = `
+                <div class="space-y-6">
+                    <div class="text-center">
+                        <p class="text-gray-600">Manage your installed server images and check for updates.</p>
+                    </div>
+                    
+                    <div class="max-h-96 overflow-y-auto">
+                        <div class="space-y-4">
+                            ${serversWithVersionInfo.map(serverInfo => this.renderInstalledServerItem(serverInfo)).join('')}
+                        </div>
+                    </div>
+
+                    <div class="flex justify-end space-x-3 pt-4 border-t border-gray-200">
+                        <button class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50" onclick="Modal.hide()">
+                            Close
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            Modal.show(content, {
+                title: 'Manage Installed Servers',
+                size: 'xl'
+            });
+
+            // Add event listeners after modal is shown
+            setTimeout(() => {
+                this.attachInstalledServersEventListeners();
+            }, 100);
+
+        } catch (error) {
+            console.error('Failed to load installed servers:', error);
+            this.showErrorModal('Load Failed', 'Failed to load installed servers information.');
+        }
+    }
+
+    showEmptyInstalledServersModal() {
+        const content = `
+            <div class="text-center py-12">
+                <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
+                </svg>
+                <h3 class="mt-2 text-sm font-medium text-gray-900">No installed servers</h3>
+                <p class="mt-1 text-sm text-gray-500">Install servers from the registry to manage them here.</p>
+                <div class="mt-6">
+                    <button type="button" class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500" onclick="Modal.hide(); window.location.hash='registry'">
+                        <svg class="-ml-1 mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                        </svg>
+                        Browse Registry
+                    </button>
+                </div>
+            </div>
+        `;
+
+        Modal.show(content, {
+            title: 'No Installed Servers',
+            size: 'md'
+        });
+    }
+
+    renderInstalledServerItem(serverInfo) {
+        const server = serverInfo.installed_server;
+        const updateAvailable = serverInfo.update_available;
+        const latestVersion = serverInfo.latest_version;
+        const hasRegistryError = serverInfo.registry_error;
+
+        return `
+            <div class="bg-white border border-gray-200 rounded-lg p-6">
+                <div class="flex items-start justify-between">
+                    <div class="flex items-start space-x-4 flex-1">
+                        <div class="w-12 h-12 bg-primary-100 rounded-lg flex items-center justify-center">
+                            <svg class="w-6 h-6 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
+                            </svg>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center space-x-2">
+                                <h3 class="text-lg font-medium text-gray-900">${server.name}</h3>
+                                ${server.is_official ? '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">Official</span>' : ''}
+                            </div>
+                            <p class="text-sm text-gray-600 mt-1">${server.description || 'No description available'}</p>
+                            <div class="flex items-center space-x-4 mt-2 text-sm text-gray-500">
+                                <span>Version: <span class="font-medium">${server.version}</span></span>
+                                <span>•</span>
+                                <span>Image: <code class="text-xs bg-gray-100 px-1 py-0.5 rounded">${server.docker_image}</code></span>
+                                <span>•</span>
+                                <span>Installed: ${new Date(server.install_date).toLocaleDateString()}</span>
+                            </div>
+                            
+                            ${hasRegistryError ? `
+                                <div class="mt-3 p-2 bg-yellow-50 border border-yellow-200 rounded-md">
+                                    <p class="text-xs text-yellow-800">
+                                        <svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
+                                        </svg>
+                                        Unable to check for updates: ${hasRegistryError}
+                                    </p>
+                                </div>
+                            ` : updateAvailable ? `
+                                <div class="mt-3 p-3 bg-green-50 border border-green-200 rounded-md">
+                                    <div class="flex items-center justify-between">
+                                        <div class="flex items-center">
+                                            <svg class="w-5 h-5 text-green-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                                            </svg>
+                                            <span class="text-sm text-green-800">
+                                                <strong>Update available!</strong> Version ${latestVersion} is now available.
+                                            </span>
+                                        </div>
+                                        <button class="update-server-btn text-sm text-green-700 hover:text-green-800 underline" data-server-id="${server.id}">
+                                            Update in Registry
+                                        </button>
+                                    </div>
+                                </div>
+                            ` : `
+                                <div class="mt-3 p-2 bg-gray-50 border border-gray-200 rounded-md">
+                                    <p class="text-xs text-gray-600">
+                                        <svg class="w-4 h-4 inline mr-1 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                        </svg>
+                                        Up to date (${server.version})
+                                    </p>
+                                </div>
+                            `}
+                        </div>
+                    </div>
+                    
+                    <div class="flex items-center space-x-2 ml-4">
+                        <button class="delete-installed-btn px-3 py-1 text-xs font-medium text-red-700 bg-red-100 border border-red-300 rounded hover:bg-red-200" data-server-id="${server.id}" data-server-name="${server.name}">
+                            Delete
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    attachInstalledServersEventListeners() {
+        // Delete buttons
+        document.querySelectorAll('.delete-installed-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const serverId = e.target.getAttribute('data-server-id');
+                const serverName = e.target.getAttribute('data-server-name');
+                this.confirmDeleteInstalledServer(serverId, serverName);
+            });
+        });
+
+        // Update buttons
+        document.querySelectorAll('.update-server-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
                 Modal.hide();
                 window.location.hash = 'registry';
             });
+        });
+    }
 
-            document.getElementById('wizard-manual')?.addEventListener('click', () => {
-                Modal.hide();
-                this.showManualInstallWizard();
-            });
+    confirmDeleteInstalledServer(serverId, serverName) {
+        const content = `
+            <div class="space-y-4">
+                <p class="text-gray-600">Are you sure you want to delete the installed server "<strong>${serverName}</strong>"?</p>
+                
+                <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                    <div class="flex">
+                        <svg class="w-5 h-5 text-yellow-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
+                        </svg>
+                        <div class="ml-3">
+                            <p class="text-sm text-yellow-800">
+                                <strong>Warning:</strong> This will remove all configured containers based on this server and optionally delete the Docker image.
+                            </p>
+                        </div>
+                    </div>
+                </div>
 
-            document.getElementById('wizard-import')?.addEventListener('click', () => {
+                <div class="space-y-3">
+                    <label class="flex items-center">
+                        <input type="checkbox" id="delete-image-checkbox" class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded">
+                        <span class="ml-2 text-sm text-gray-700">Also delete the Docker image from local storage</span>
+                    </label>
+                </div>
+                
+                <div class="flex justify-end space-x-3 pt-4 border-t border-gray-200">
+                    <button class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50" onclick="Modal.hide()">
+                        Cancel
+                    </button>
+                    <button id="confirm-delete-btn" class="px-4 py-2 text-sm font-medium text-white bg-red-600 border border-transparent rounded-md hover:bg-red-700">
+                        Delete Server
+                    </button>
+                </div>
+            </div>
+        `;
+
+        Modal.show(content, {
+            title: 'Delete Installed Server',
+            size: 'md'
+        });
+
+        // Add event listener for confirm delete
+        setTimeout(() => {
+            document.getElementById('confirm-delete-btn')?.addEventListener('click', async () => {
+                const deleteImage = document.getElementById('delete-image-checkbox').checked;
                 Modal.hide();
-                this.showImportConfigWizard();
+                await this.deleteInstalledServer(serverId, deleteImage);
             });
         }, 100);
+    }
+
+    async deleteInstalledServer(serverId, removeImage) {
+        try {
+            await window.go.main.App.RemoveInstalledServer(serverId, removeImage);
+            
+            // Show success message and refresh the installed servers view
+            this.showSuccessModal('Server Deleted', 'Installed server has been successfully removed.');
+            
+            // If manage installed servers modal is still open, refresh it
+            setTimeout(() => {
+                if (document.querySelector('.modal-content')) {
+                    this.showManageInstalledServers();
+                }
+            }, 1500);
+            
+        } catch (error) {
+            console.error('Failed to delete installed server:', error);
+            this.showErrorModal('Delete Failed', `Failed to delete installed server: ${error.message || error}`);
+        }
+    }
+
+    showServerConfigurationWizard(server) {
+        // Extract default values from registry metadata
+        const defaultPort = server.ports && Object.keys(server.ports).length > 0 ? Object.values(server.ports)[0] : '';
+        const memoryRequirement = server.resource_requirements && server.resource_requirements.memory ? server.resource_requirements.memory : '';
+        
+        // Pre-populate environment variables from registry metadata
+        let envVarsConfig = [];
+        if (server.environment_variables) {
+            // Handle required variables
+            if (server.environment_variables.required && Array.isArray(server.environment_variables.required)) {
+                server.environment_variables.required.forEach(envVar => {
+                    envVarsConfig.push({
+                        name: envVar.name,
+                        value: envVar.value || '',
+                        description: envVar.description || '',
+                        required: true,
+                        type: 'required'
+                    });
+                });
+            }
+            
+            // Handle default variables
+            if (server.environment_variables.default && Array.isArray(server.environment_variables.default)) {
+                server.environment_variables.default.forEach(envVar => {
+                    envVarsConfig.push({
+                        name: envVar.name,
+                        value: envVar.value || '',
+                        description: envVar.description || '',
+                        required: false,
+                        type: 'default'
+                    });
+                });
+            }
+            
+            // Handle optional variables
+            if (server.environment_variables.optional && Array.isArray(server.environment_variables.optional)) {
+                server.environment_variables.optional.forEach(envVar => {
+                    envVarsConfig.push({
+                        name: envVar.name,
+                        value: envVar.value || '',
+                        description: envVar.description || '',
+                        required: false,
+                        type: 'optional'
+                    });
+                });
+            }
+        }
+        
+        // Pre-populate volumes from registry metadata
+        let volumesText = '';
+        if (server.volumes && Array.isArray(server.volumes) && server.volumes.length > 0) {
+            volumesText = server.volumes.map(volume => {
+                if (typeof volume === 'string') {
+                    return volume;
+                } else if (volume.host_path && volume.container_path) {
+                    return `${volume.host_path}:${volume.container_path}`;
+                }
+                return '';
+            }).filter(v => v).join('\\n');
+        }
+
+        const content = `
+            <div class="space-y-6">
+                <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                    <h4 class="font-medium text-gray-900 mb-2">Server Details</h4>
+                    <dl class="grid grid-cols-2 gap-2 text-sm">
+                        <div>
+                            <dt class="text-gray-600">Name:</dt>
+                            <dd class="text-gray-900">${server.name}</dd>
+                        </div>
+                        <div>
+                            <dt class="text-gray-600">Image:</dt>
+                            <dd class="text-gray-900 font-mono text-xs">${server.docker_image}</dd>
+                        </div>
+                        ${server.version ? `
+                            <div>
+                                <dt class="text-gray-600">Version:</dt>
+                                <dd class="text-gray-900">${server.version}</dd>
+                            </div>
+                        ` : ''}
+                        ${memoryRequirement ? `
+                            <div>
+                                <dt class="text-gray-600">Memory:</dt>
+                                <dd class="text-gray-900">${memoryRequirement}</dd>
+                            </div>
+                        ` : ''}
+                    </dl>
+                </div>
+                
+                ${server.setup_description ? `
+                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                        <h4 class="font-medium text-gray-900 mb-2">Setup Instructions</h4>
+                        <div class="text-sm text-blue-900">${this.renderMarkdown(server.setup_description)}</div>
+                    </div>
+                ` : ''}
+
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Container Name</label>
+                        <input type="text" id="container-name" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500" placeholder="${server.name.toLowerCase().replace(/\s+/g, '-')}-${Date.now()}" value="${server.name.toLowerCase().replace(/\s+/g, '-')}-${Date.now()}">
+                    </div>
+                    
+                    
+                    <div>
+                        <div class="flex items-center justify-between mb-2">
+                            <label class="block text-sm font-medium text-gray-700">Environment Variables</label>
+                            <button type="button" id="add-env-var-btn" class="flex items-center px-2 py-1 text-xs font-medium text-primary-600 bg-primary-50 border border-primary-200 rounded hover:bg-primary-100 focus:outline-none focus:ring-1 focus:ring-primary-500">
+                                <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                                </svg>
+                                Add Variable
+                            </button>
+                        </div>
+                        <div id="env-vars-container" class="space-y-2">
+                            ${envVarsConfig.map((envVar, index) => `
+                                <div class="env-var-row flex items-center space-x-2" data-required="${envVar.required}" data-type="${envVar.type}">
+                                    <div class="flex-1">
+                                        <input type="text" class="env-var-name w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500 text-sm" placeholder="Variable name" value="${envVar.name}" ${envVar.required ? 'readonly' : ''}>
+                                    </div>
+                                    <div class="flex-1">
+                                        <input type="text" class="env-var-value w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500 text-sm" placeholder="Value" value="${envVar.value}">
+                                    </div>
+                                    <button type="button" class="remove-env-var-btn p-1 ${envVar.required ? 'text-gray-300 cursor-not-allowed' : 'text-red-500 hover:text-red-700'}" ${envVar.required ? 'disabled' : ''} title="${envVar.required ? 'Required variable cannot be removed' : 'Remove variable'}">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                        </svg>
+                                    </button>
+                                </div>
+                                ${envVar.description ? `
+                                    <div class="text-xs text-gray-500 ml-2 mb-4">
+                                        <span class="inline-flex items-center">
+                                            <span class="w-2 h-2 ${envVar.type === 'required' ? 'bg-red-400' : envVar.type === 'default' ? 'bg-green-400' : 'bg-blue-400'} rounded-full mr-1"></span>
+                                            ${envVar.type === 'required' ? 'Required' : envVar.type === 'default' ? 'Default' : 'Optional'}: ${envVar.description}
+                                        </span>
+                                    </div>
+                                ` : ''}
+                            `).join('')}
+                        </div>
+                        ${envVarsConfig.length === 0 ? `
+                            <div class="env-var-row flex items-center space-x-2" data-required="false">
+                                <div class="flex-1">
+                                    <input type="text" class="env-var-name w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500 text-sm" placeholder="Variable name">
+                                </div>
+                                <div class="flex-1">
+                                    <input type="text" class="env-var-value w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500 text-sm" placeholder="Value">
+                                </div>
+                                <button type="button" class="remove-env-var-btn p-1 text-red-500 hover:text-red-700" title="Remove variable">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                    </svg>
+                                </button>
+                            </div>
+                        ` : ''}
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Volume Mounts${volumesText ? ' (pre-populated from registry)' : ' (optional)'}</label>
+                        <textarea id="volume-mounts" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500" rows="3" placeholder="/host/path:/container/path
+/host/config:/app/config">${volumesText}</textarea>
+                        <p class="text-xs text-gray-500 mt-1">One mount per line in host_path:container_path format</p>
+                    </div>
+                </div>
+                
+                <div class="flex justify-end space-x-3 pt-4 border-t border-gray-200">
+                    <button class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50" onclick="Modal.hide()">
+                        Cancel
+                    </button>
+                    <button id="create-container-btn" class="px-4 py-2 text-sm font-medium text-white bg-primary-600 border border-transparent rounded-md hover:bg-primary-700">
+                        Setup MCP Server
+                    </button>
+                </div>
+            </div>
+        `;
+
+        Modal.show(content, {
+            title: `Setup MCP Server: ${server.name}`,
+            size: 'xl'
+        });
+
+        // Add create container handler and environment variable management
+        setTimeout(() => {
+            document.getElementById('create-container-btn')?.addEventListener('click', () => {
+                this.createContainerFromForm(server);
+            });
+
+            // Add environment variable functionality
+            this.attachEnvVarEventListeners();
+            
+            // Add external link handling for markdown content within the modal
+            this.attachExternalLinkHandlers();
+        }, 100);
+    }
+
+    attachEnvVarEventListeners() {
+        // Add new environment variable
+        document.getElementById('add-env-var-btn')?.addEventListener('click', () => {
+            this.addEnvironmentVariable();
+        });
+
+        // Handle remove buttons for existing variables
+        document.querySelectorAll('.remove-env-var-btn').forEach(btn => {
+            if (!btn.disabled) {
+                btn.addEventListener('click', (e) => {
+                    this.removeEnvironmentVariable(e.target.closest('.env-var-row'));
+                });
+            }
+        });
+    }
+
+    attachExternalLinkHandlers() {
+        // Find all external links in the current modal and add click handlers
+        document.querySelectorAll('.external-link').forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                const url = e.target.getAttribute('data-url');
+                
+                if (url) {
+                    try {
+                        BrowserOpenURL(url);
+                    } catch (error) {
+                        // Fallback for web version or if Wails runtime not available
+                        window.open(url, '_blank');
+                    }
+                }
+            });
+        });
+    }
+
+    addEnvironmentVariable() {
+        const container = document.getElementById('env-vars-container');
+        if (!container) return;
+
+        const newRow = document.createElement('div');
+        newRow.className = 'env-var-row flex items-center space-x-2';
+        newRow.setAttribute('data-required', 'false');
+        newRow.innerHTML = `
+            <div class="flex-1">
+                <input type="text" class="env-var-name w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500 text-sm" placeholder="Variable name">
+            </div>
+            <div class="flex-1">
+                <input type="text" class="env-var-value w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500 text-sm" placeholder="Value">
+            </div>
+            <button type="button" class="remove-env-var-btn p-1 text-red-500 hover:text-red-700" title="Remove variable">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+            </button>
+        `;
+
+        container.appendChild(newRow);
+
+        // Add event listener to the new remove button
+        const removeBtn = newRow.querySelector('.remove-env-var-btn');
+        removeBtn.addEventListener('click', () => {
+            this.removeEnvironmentVariable(newRow);
+        });
+
+        // Focus on the name input
+        newRow.querySelector('.env-var-name').focus();
+    }
+
+    removeEnvironmentVariable(row) {
+        if (row && row.getAttribute('data-required') !== 'true') {
+            row.remove();
+        }
+    }
+
+    async createContainerFromForm(server) {
+        const containerName = document.getElementById('container-name').value.trim();
+        // Handle port internally from server metadata
+        const port = server.ports && Object.keys(server.ports).length > 0 ? parseInt(Object.values(server.ports)[0]) || 0 : 0;
+        const volumesText = document.getElementById('volume-mounts').value.trim();
+
+        if (!containerName) {
+            this.showErrorModal('Validation Error', 'Container name is required.');
+            return;
+        }
+
+        try {
+            // Parse environment variables from individual input fields
+            const environment = {};
+            const envVarRows = document.querySelectorAll('.env-var-row');
+            envVarRows.forEach(row => {
+                const nameInput = row.querySelector('.env-var-name');
+                const valueInput = row.querySelector('.env-var-value');
+                
+                if (nameInput && valueInput) {
+                    const name = nameInput.value.trim();
+                    const value = valueInput.value.trim();
+                    
+                    if (name) {
+                        environment[name] = value;
+                    }
+                }
+            });
+
+            // Parse volume mounts
+            const volumes = {};
+            if (volumesText) {
+                volumesText.split('\n').forEach(line => {
+                    const [hostPath, containerPath] = line.split(':');
+                    if (hostPath && containerPath) {
+                        volumes[hostPath.trim()] = containerPath.trim();
+                    }
+                });
+            }
+
+            const config = {
+                name: containerName,
+                image: server.docker_image,
+                port: port,
+                environment: environment,
+                volumes: volumes,
+                labels: {
+                    "neobelt.server-id": server.id,
+                    "neobelt.server-name": server.name
+                }
+            };
+
+            const containerId = await window.go.main.App.CreateContainer(config);
+            
+            // Create a configured server entry for this container
+            try {
+                await window.go.main.App.CreateConfiguredServer(
+                    server.id,
+                    containerName,
+                    containerId,
+                    port,
+                    environment,
+                    volumes
+                );
+            } catch (configError) {
+                console.warn('Failed to create configured server entry:', configError);
+                // Don't fail the whole operation - container was created successfully
+            }
+            
+            Modal.hide();
+            await this.loadServers(); // Refresh the list
+            
+            // Show success message
+            this.showSuccessModal('MCP Server Created', `MCP Server "${containerName}" has been created successfully. Container ID: ${containerId.substring(0, 12)}`);
+        } catch (error) {
+            console.error('Failed to create container:', error);
+            this.showErrorModal('Create MCP Server Failed', `Failed to create MCP Server: ${error.message || error}`);
+        }
+    }
+
+    showSuccessModal(title, message) {
+        const content = `
+            <div class="space-y-4">
+                <div class="bg-green-50 border border-green-200 rounded-lg p-4">
+                    <div class="flex">
+                        <svg class="w-5 h-5 text-green-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        <div class="ml-3">
+                            <p class="text-sm text-green-800">${message}</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex justify-end">
+                    <button class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50" onclick="Modal.hide()">
+                        Close
+                    </button>
+                </div>
+            </div>
+        `;
+
+        Modal.show(content, {
+            title: title,
+            size: 'md'
+        });
     }
 
     showManualInstallWizard() {

@@ -66,6 +66,14 @@ class App {
         
         mainContent.innerHTML = page.render();
         
+        // Make the page instance accessible globally for modal callbacks
+        if (pageName === 'servers') {
+            mainContent.classList.add('servers-instance');
+            window.serversInstance = page;
+        } else {
+            mainContent.classList.remove('servers-instance');
+        }
+        
         // Attach page-specific event listeners
         if (page.attachEventListeners) {
             page.attachEventListeners();

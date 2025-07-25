@@ -10,9 +10,10 @@ import (
 
 // Configuration represents the application configuration
 type Configuration struct {
-	App        AppConfig      `json:"app" mapstructure:"app"`
-	Registries []Registry     `json:"registries" mapstructure:"registries"`
-	Servers    []ServerConfig `json:"servers" mapstructure:"servers"`
+	App                AppConfig             `json:"app" mapstructure:"app"`
+	Registries         []Registry            `json:"registries" mapstructure:"registries"`
+	InstalledServers   []InstalledServer     `json:"installed_servers" mapstructure:"installed_servers"`
+	ConfiguredServers  []ConfiguredServer    `json:"configured_servers" mapstructure:"configured_servers"`
 }
 
 // AppConfig contains general application settings
@@ -24,18 +25,45 @@ type AppConfig struct {
 	CheckForUpdates bool   `json:"check_for_updates" mapstructure:"check_for_updates"`
 }
 
-// ServerConfig contains configuration for installed servers
-type ServerConfig struct {
-	ID          string            `json:"id" mapstructure:"id"`
-	Name        string            `json:"name" mapstructure:"name"`
-	DockerImage string            `json:"docker_image" mapstructure:"docker_image"`
-	Version     string            `json:"version" mapstructure:"version"`
-	Installed   bool              `json:"installed" mapstructure:"installed"`
-	Running     bool              `json:"running" mapstructure:"running"`
-	Port        int               `json:"port" mapstructure:"port"`
-	Environment map[string]string `json:"environment" mapstructure:"environment"`
-	InstallDate string            `json:"install_date" mapstructure:"install_date"`
-	LastUpdated string            `json:"last_updated" mapstructure:"last_updated"`
+// InstalledServer represents a server that has been installed (Docker image pulled)
+type InstalledServer struct {
+	ID                   string            `json:"id" mapstructure:"id"`
+	Name                 string            `json:"name" mapstructure:"name"`
+	DockerImage          string            `json:"docker_image" mapstructure:"docker_image"`
+	Version              string            `json:"version" mapstructure:"version"`
+	Description          string            `json:"description" mapstructure:"description"`
+	SetupDescription     string            `json:"setup_description" mapstructure:"setup_description"`
+	SupportURL           string            `json:"support_url" mapstructure:"support_url"`
+	License              string            `json:"license" mapstructure:"license"`
+	Maintainer           string            `json:"maintainer" mapstructure:"maintainer"`
+	Tags                 []string          `json:"tags" mapstructure:"tags"`
+	Architecture         []string          `json:"architecture" mapstructure:"architecture"`
+	HealthCheck          map[string]any    `json:"health_check" mapstructure:"health_check"`
+	ResourceRequirements map[string]any    `json:"resource_requirements" mapstructure:"resource_requirements"`
+	DockerCommand        string            `json:"docker_command" mapstructure:"docker_command"`
+	EnvironmentVariables map[string]any    `json:"environment_variables" mapstructure:"environment_variables"`
+	Ports                map[string]any    `json:"ports" mapstructure:"ports"`
+	Volumes              []any             `json:"volumes" mapstructure:"volumes"`
+	InstallDate          string            `json:"install_date" mapstructure:"install_date"`
+	LastUpdated          string            `json:"last_updated" mapstructure:"last_updated"`
+	SourceRegistry       string            `json:"source_registry" mapstructure:"source_registry"`
+	IsOfficial           bool              `json:"is_official" mapstructure:"is_official"`
+}
+
+// ConfiguredServer represents an actual Docker container configuration
+type ConfiguredServer struct {
+	ID               string            `json:"id" mapstructure:"id"`
+	Name             string            `json:"name" mapstructure:"name"`
+	ContainerName    string            `json:"container_name" mapstructure:"container_name"`
+	ContainerID      string            `json:"container_id" mapstructure:"container_id"`
+	InstalledServerID string           `json:"installed_server_id" mapstructure:"installed_server_id"`
+	DockerImage      string            `json:"docker_image" mapstructure:"docker_image"`
+	Port             int               `json:"port" mapstructure:"port"`
+	Environment      map[string]string `json:"environment" mapstructure:"environment"`
+	Volumes          map[string]string `json:"volumes" mapstructure:"volumes"`
+	CreatedDate      string            `json:"created_date" mapstructure:"created_date"`
+	LastStarted      string            `json:"last_started" mapstructure:"last_started"`
+	AutoStart        bool              `json:"auto_start" mapstructure:"auto_start"`
 }
 
 // ConfigManager handles configuration persistence
@@ -74,7 +102,8 @@ func NewConfigManager() (*ConfigManager, error) {
 	v.SetDefault("app.refresh_interval", 5)
 	v.SetDefault("app.check_for_updates", true)
 	v.SetDefault("registries", []Registry{})
-	v.SetDefault("servers", []ServerConfig{})
+	v.SetDefault("installed_servers", []InstalledServer{})
+	v.SetDefault("configured_servers", []ConfiguredServer{})
 
 	cm := &ConfigManager{
 		viper:      v,
@@ -119,7 +148,8 @@ func (cm *ConfigManager) Save() error {
 	if cm.config != nil {
 		cm.viper.Set("app", cm.config.App)
 		cm.viper.Set("registries", cm.config.Registries)
-		cm.viper.Set("servers", cm.config.Servers)
+		cm.viper.Set("installed_servers", cm.config.InstalledServers)
+		cm.viper.Set("configured_servers", cm.config.ConfiguredServers)
 	}
 
 	// Write to file
@@ -203,49 +233,94 @@ func (cm *ConfigManager) UpdateRegistry(oldURL string, newRegistry Registry) err
 	return fmt.Errorf("registry with URL %s not found", oldURL)
 }
 
-// GetServers returns all configured servers
-func (cm *ConfigManager) GetServers() []ServerConfig {
+// GetInstalledServers returns all installed servers
+func (cm *ConfigManager) GetInstalledServers() []InstalledServer {
 	if cm.config == nil {
-		return []ServerConfig{}
+		return []InstalledServer{}
 	}
-	return cm.config.Servers
+	return cm.config.InstalledServers
 }
 
-// AddOrUpdateServer adds or updates a server configuration
-func (cm *ConfigManager) AddOrUpdateServer(server ServerConfig) error {
+// GetConfiguredServers returns all configured servers
+func (cm *ConfigManager) GetConfiguredServers() []ConfiguredServer {
+	if cm.config == nil {
+		return []ConfiguredServer{}
+	}
+	return cm.config.ConfiguredServers
+}
+
+// AddOrUpdateInstalledServer adds or updates an installed server
+func (cm *ConfigManager) AddOrUpdateInstalledServer(server InstalledServer) error {
 	if cm.config == nil {
 		cm.config = &Configuration{}
 	}
 
 	// Find existing server
-	for i, existing := range cm.config.Servers {
+	for i, existing := range cm.config.InstalledServers {
 		if existing.ID == server.ID {
 			// Update existing server
-			cm.config.Servers[i] = server
+			cm.config.InstalledServers[i] = server
 			return cm.Save()
 		}
 	}
 
 	// Add new server
-	cm.config.Servers = append(cm.config.Servers, server)
+	cm.config.InstalledServers = append(cm.config.InstalledServers, server)
 	return cm.Save()
 }
 
-// RemoveServer removes a server from the configuration
-func (cm *ConfigManager) RemoveServer(serverID string) error {
+// AddOrUpdateConfiguredServer adds or updates a configured server
+func (cm *ConfigManager) AddOrUpdateConfiguredServer(server ConfiguredServer) error {
+	if cm.config == nil {
+		cm.config = &Configuration{}
+	}
+
+	// Find existing server
+	for i, existing := range cm.config.ConfiguredServers {
+		if existing.ID == server.ID {
+			// Update existing server
+			cm.config.ConfiguredServers[i] = server
+			return cm.Save()
+		}
+	}
+
+	// Add new server
+	cm.config.ConfiguredServers = append(cm.config.ConfiguredServers, server)
+	return cm.Save()
+}
+
+// RemoveInstalledServer removes an installed server from the configuration
+func (cm *ConfigManager) RemoveInstalledServer(serverID string) error {
 	if cm.config == nil {
 		return fmt.Errorf("no configuration loaded")
 	}
 
 	// Find and remove server
-	for i, server := range cm.config.Servers {
+	for i, server := range cm.config.InstalledServers {
 		if server.ID == serverID {
-			cm.config.Servers = append(cm.config.Servers[:i], cm.config.Servers[i+1:]...)
+			cm.config.InstalledServers = append(cm.config.InstalledServers[:i], cm.config.InstalledServers[i+1:]...)
 			return cm.Save()
 		}
 	}
 
-	return fmt.Errorf("server with ID %s not found", serverID)
+	return fmt.Errorf("installed server with ID %s not found", serverID)
+}
+
+// RemoveConfiguredServer removes a configured server from the configuration
+func (cm *ConfigManager) RemoveConfiguredServer(serverID string) error {
+	if cm.config == nil {
+		return fmt.Errorf("no configuration loaded")
+	}
+
+	// Find and remove server
+	for i, server := range cm.config.ConfiguredServers {
+		if server.ID == serverID {
+			cm.config.ConfiguredServers = append(cm.config.ConfiguredServers[:i], cm.config.ConfiguredServers[i+1:]...)
+			return cm.Save()
+		}
+	}
+
+	return fmt.Errorf("configured server with ID %s not found", serverID)
 }
 
 // GetConfigPath returns the path to the configuration file
