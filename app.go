@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -300,24 +301,399 @@ func (a *App) GetConfigPath() string {
 	return a.configManager.GetConfigPath()
 }
 
+// GetServerDefaults returns the current server default settings
+func (a *App) GetServerDefaults() (*ServerDefaultsConfig, error) {
+	if a.configManager == nil {
+		return nil, fmt.Errorf("configuration manager not available")
+	}
+
+	config := a.configManager.GetConfig()
+	if config == nil {
+		return nil, fmt.Errorf("no configuration available")
+	}
+
+	return &config.ServerDefaults, nil
+}
+
+// UpdateServerDefaults updates the server default settings
+func (a *App) UpdateServerDefaults(serverDefaults ServerDefaultsConfig) error {
+	if a.configManager == nil {
+		return fmt.Errorf("configuration manager not available")
+	}
+
+	config := a.configManager.GetConfig()
+	if config == nil {
+		return fmt.Errorf("no configuration available")
+	}
+
+	// Check if port range changed and needs reallocation
+	oldDefaultPort := config.ServerDefaults.DefaultPort
+	portChanged := oldDefaultPort != serverDefaults.DefaultPort
+
+	config.ServerDefaults = serverDefaults
+	
+	// Save configuration first
+	if err := a.configManager.Save(); err != nil {
+		return err
+	}
+
+	// If port range changed, reallocate ports for existing servers
+	if portChanged {
+		if err := a.reallocatePorts(serverDefaults.DefaultPort); err != nil {
+			fmt.Printf("Warning: Failed to reallocate ports: %v\n", err)
+			// Don't fail the settings update if port reallocation fails
+		}
+	}
+
+	// Apply new memory limits and restart policies to existing containers
+	if err := a.applySettingsToExistingContainers(serverDefaults); err != nil {
+		fmt.Printf("Warning: Failed to apply some settings to existing containers: %v\n", err)
+		// Don't fail the settings update if container updates fail
+	}
+
+	return nil
+}
+
+// reallocatePorts reallocates ports for all configured servers starting from the new default port
+func (a *App) reallocatePorts(newDefaultPort int) error {
+	if a.configManager == nil {
+		return fmt.Errorf("configuration manager not available")
+	}
+
+	configuredServers := a.configManager.GetConfiguredServers()
+	if len(configuredServers) == 0 {
+		return nil // No servers to update
+	}
+
+	// Create a map to track new port assignments
+	usedPorts := make(map[int]bool)
+	nextPort := newDefaultPort
+
+	// Reallocate ports for each configured server
+	for _, server := range configuredServers {
+		// Find next available port
+		for usedPorts[nextPort] {
+			nextPort++
+			if nextPort > 65535 {
+				return fmt.Errorf("no available ports in valid range")
+			}
+		}
+
+		oldPort := server.Port
+		server.Port = nextPort
+		usedPorts[nextPort] = true
+
+		// Update the configured server in the database
+		if err := a.configManager.AddOrUpdateConfiguredServer(server); err != nil {
+			return fmt.Errorf("failed to update configured server %s: %w", server.ID, err)
+		}
+
+		// Update the actual Docker container port mapping if it exists and is running
+		if a.dockerService != nil && server.ContainerID != "" {
+			if err := a.updateContainerPort(server.ContainerID, oldPort, nextPort); err != nil {
+				fmt.Printf("Warning: Failed to update container port for %s: %v\n", server.ContainerID, err)
+				// Continue with other servers even if one fails
+			}
+		}
+
+		nextPort++
+		fmt.Printf("Reallocated port for server %s: %d -> %d\n", server.Name, oldPort, server.Port)
+	}
+
+	return nil
+}
+
+// updateContainerPort updates the port mapping for an existing container by recreating it
+func (a *App) updateContainerPort(containerID string, oldPort, newPort int) error {
+	if oldPort == newPort {
+		return nil // No change needed
+	}
+
+	if a.dockerService == nil {
+		return fmt.Errorf("docker service not available")
+	}
+
+	// Get container information first
+	containers, err := a.dockerService.GetManagedContainers(a.ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get container info: %w", err)
+	}
+
+	var containerInfo *ContainerInfo
+	for _, container := range containers {
+		if container.ID == containerID || strings.HasPrefix(container.ID, containerID) {
+			containerInfo = &container
+			break
+		}
+	}
+
+	if containerInfo == nil {
+		return fmt.Errorf("container %s not found", containerID)
+	}
+
+	// Check if container is running - only recreate if it's running
+	if containerInfo.State != "running" {
+		fmt.Printf("Container %s is not running (%s), port change will apply on next start\n", containerID, containerInfo.State)
+		return nil
+	}
+
+	fmt.Printf("Recreating container %s to change port mapping: %d -> %d\n", containerID, oldPort, newPort)
+
+	// Get server defaults for recreation
+	serverDefaults, err := a.GetServerDefaults()
+	if err != nil {
+		return fmt.Errorf("failed to get server defaults: %w", err)
+	}
+
+	// Stop the container
+	fmt.Printf("Stopping container %s for port change...\n", containerID)
+	if err := a.dockerService.StopContainer(a.ctx, containerID); err != nil {
+		return fmt.Errorf("failed to stop container: %w", err)
+	}
+
+	// Get the configured server info to recreate the container
+	configuredServers := a.configManager.GetConfiguredServers()
+	var configuredServer *ConfiguredServer
+	for _, server := range configuredServers {
+		if server.ContainerID == containerID || strings.HasPrefix(server.ContainerID, containerID) {
+			configuredServer = &server
+			break
+		}
+	}
+
+	if configuredServer == nil {
+		return fmt.Errorf("configured server info not found for container %s", containerID)
+	}
+
+	// Remove the old container
+	fmt.Printf("Removing old container %s...\n", containerID)
+	if err := a.dockerService.RemoveContainer(a.ctx, containerID, true); err != nil {
+		return fmt.Errorf("failed to remove old container: %w", err)
+	}
+
+	// Create new container with updated port
+	newConfig := ContainerCreateConfig{
+		Name:          containerInfo.Name,
+		Image:         containerInfo.Image,
+		Port:          newPort, // Use the new port
+		ContainerPort: configuredServer.ContainerPort, // Use stored container port
+		Environment:   configuredServer.Environment,
+		Volumes:       convertVolumesToMap(containerInfo.Volumes),
+		Labels:        containerInfo.Labels,
+		DockerCommand: "", // We don't store the original docker command
+		MemoryLimitMB: serverDefaults.MaxMemoryMB,
+		RestartPolicy: func() string {
+			if serverDefaults.RestartOnFailure {
+				return "on-failure"
+			}
+			return "no"
+		}(),
+	}
+
+	fmt.Printf("Creating new container with host port %d and container port %d\n", newPort, newConfig.ContainerPort)
+
+	newContainerID, err := a.dockerService.CreateContainer(a.ctx, newConfig)
+	if err != nil {
+		return fmt.Errorf("failed to create new container with new port: %w", err)
+	}
+
+	// Update the configured server with the new container ID
+	configuredServer.ContainerID = newContainerID
+	if err := a.configManager.AddOrUpdateConfiguredServer(*configuredServer); err != nil {
+		fmt.Printf("Warning: Failed to update configured server with new container ID: %v\n", err)
+	}
+
+	// Start the new container
+	fmt.Printf("Starting new container %s with port %d...\n", newContainerID, newPort)
+	if err := a.dockerService.StartContainer(a.ctx, newContainerID); err != nil {
+		return fmt.Errorf("failed to start new container: %w", err)
+	}
+
+	fmt.Printf("Successfully recreated container with new port: %s -> %s (port %d -> %d)\n", 
+		containerID, newContainerID, oldPort, newPort)
+	return nil
+}
+
+// applySettingsToExistingContainers applies new server defaults to existing containers
+func (a *App) applySettingsToExistingContainers(serverDefaults ServerDefaultsConfig) error {
+	if a.configManager == nil || a.dockerService == nil {
+		return fmt.Errorf("configuration manager or docker service not available")
+	}
+
+	configuredServers := a.configManager.GetConfiguredServers()
+	if len(configuredServers) == 0 {
+		return nil // No servers to update
+	}
+
+	for _, server := range configuredServers {
+		if server.ContainerID == "" {
+			continue // Skip servers without container IDs
+		}
+
+		// Try to update container settings
+		if err := a.updateContainerSettings(server.ContainerID, serverDefaults); err != nil {
+			fmt.Printf("Warning: Failed to update settings for container %s (%s): %v\n", 
+				server.ContainerID, server.Name, err)
+			// Continue with other containers
+		} else {
+			fmt.Printf("Updated settings for container %s (%s)\n", server.ContainerID, server.Name)
+		}
+	}
+
+	return nil
+}
+
+// updateContainerSettings updates memory and restart policy for an existing container by recreating it
+func (a *App) updateContainerSettings(containerID string, serverDefaults ServerDefaultsConfig) error {
+	if a.dockerService == nil {
+		return fmt.Errorf("docker service not available")
+	}
+
+	// Get container information first
+	containers, err := a.dockerService.GetManagedContainers(a.ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get container info: %w", err)
+	}
+
+	var containerInfo *ContainerInfo
+	for _, container := range containers {
+		if container.ID == containerID || strings.HasPrefix(container.ID, containerID) {
+			containerInfo = &container
+			break
+		}
+	}
+
+	if containerInfo == nil {
+		return fmt.Errorf("container %s not found", containerID)
+	}
+
+	// Check if container is running - only recreate if it's running
+	if containerInfo.State != "running" {
+		fmt.Printf("Container %s is not running (%s), skipping recreation\n", containerID, containerInfo.State)
+		return nil
+	}
+
+	fmt.Printf("Recreating container %s to apply new settings...\n", containerID)
+
+	// Stop the container
+	fmt.Printf("Stopping container %s...\n", containerID)
+	if err := a.dockerService.StopContainer(a.ctx, containerID); err != nil {
+		return fmt.Errorf("failed to stop container: %w", err)
+	}
+
+	// Get the configured server info to recreate the container
+	configuredServers := a.configManager.GetConfiguredServers()
+	var configuredServer *ConfiguredServer
+	for _, server := range configuredServers {
+		if server.ContainerID == containerID || strings.HasPrefix(server.ContainerID, containerID) {
+			configuredServer = &server
+			break
+		}
+	}
+
+	if configuredServer == nil {
+		return fmt.Errorf("configured server info not found for container %s", containerID)
+	}
+
+	// Remove the old container
+	fmt.Printf("Removing old container %s...\n", containerID)
+	if err := a.dockerService.RemoveContainer(a.ctx, containerID, true); err != nil {
+		return fmt.Errorf("failed to remove old container: %w", err)
+	}
+
+	// Create new container with updated settings
+	newConfig := ContainerCreateConfig{
+		Name:          containerInfo.Name,
+		Image:         containerInfo.Image,
+		Port:          configuredServer.Port, // Use the potentially updated port
+		ContainerPort: configuredServer.ContainerPort, // Use stored container port
+		Environment:   configuredServer.Environment,
+		Volumes:       convertVolumesToMap(containerInfo.Volumes),
+		Labels:        containerInfo.Labels,
+		DockerCommand: "", // We don't store the original docker command
+		MemoryLimitMB: serverDefaults.MaxMemoryMB,
+		RestartPolicy: func() string {
+			if serverDefaults.RestartOnFailure {
+				return "on-failure"
+			}
+			return "no"
+		}(),
+	}
+
+	fmt.Printf("Creating new container with updated settings: Memory=%dMB, RestartPolicy=%s, HostPort=%d, ContainerPort=%d\n", 
+		newConfig.MemoryLimitMB, newConfig.RestartPolicy, newConfig.Port, newConfig.ContainerPort)
+
+	newContainerID, err := a.dockerService.CreateContainer(a.ctx, newConfig)
+	if err != nil {
+		return fmt.Errorf("failed to create new container: %w", err)
+	}
+
+	// Update the configured server with the new container ID
+	configuredServer.ContainerID = newContainerID
+	if err := a.configManager.AddOrUpdateConfiguredServer(*configuredServer); err != nil {
+		fmt.Printf("Warning: Failed to update configured server with new container ID: %v\n", err)
+	}
+
+	// Start the new container (respecting auto-start setting would have been applied during original creation)
+	fmt.Printf("Starting new container %s...\n", newContainerID)
+	if err := a.dockerService.StartContainer(a.ctx, newContainerID); err != nil {
+		return fmt.Errorf("failed to start new container: %w", err)
+	}
+
+	fmt.Printf("Successfully recreated container: %s -> %s\n", containerID, newContainerID)
+	return nil
+}
+
+// convertVolumesToMap converts volume slice to map format expected by ContainerCreateConfig
+func convertVolumesToMap(volumes []string) map[string]string {
+	volumeMap := make(map[string]string)
+	for _, volume := range volumes {
+		parts := strings.Split(volume, ":")
+		if len(parts) >= 2 {
+			volumeMap[parts[0]] = parts[1]
+		}
+	}
+	return volumeMap
+}
+
 // Docker API methods
 
 // GetManagedContainers returns all Docker containers managed by neobelt
 func (a *App) GetManagedContainers() ([]ContainerInfo, error) {
+	fmt.Printf("[DEBUG] App.GetManagedContainers called\n")
+	
 	if a.dockerService == nil {
+		fmt.Printf("[ERROR] Docker service not available\n")
 		return nil, fmt.Errorf("Docker service not available")
 	}
 
-	return a.dockerService.GetManagedContainers(a.ctx)
+	containers, err := a.dockerService.GetManagedContainers(a.ctx)
+	if err != nil {
+		fmt.Printf("[ERROR] Docker service GetManagedContainers failed: %v\n", err)
+		return nil, err
+	}
+	
+	fmt.Printf("[DEBUG] App.GetManagedContainers returning %d containers\n", len(containers))
+	return containers, nil
 }
 
 // StartContainer starts a Docker container
 func (a *App) StartContainer(containerID string) error {
+	fmt.Printf("[DEBUG] App.StartContainer called for container: %s\n", containerID)
+	
 	if a.dockerService == nil {
+		fmt.Printf("[ERROR] Docker service not available\n")
 		return fmt.Errorf("Docker service not available")
 	}
 
-	return a.dockerService.StartContainer(a.ctx, containerID)
+	err := a.dockerService.StartContainer(a.ctx, containerID)
+	if err != nil {
+		fmt.Printf("[ERROR] Docker service StartContainer failed for %s: %v\n", containerID, err)
+		return err
+	}
+	
+	fmt.Printf("[DEBUG] App.StartContainer completed successfully for: %s\n", containerID)
+	return nil
 }
 
 // StopContainer stops a Docker container
@@ -363,10 +739,15 @@ func (a *App) RemoveContainer(containerID string, force bool) error {
 	if a.configManager != nil {
 		configuredServers := a.configManager.GetConfiguredServers()
 		for _, server := range configuredServers {
-			if server.ContainerID == containerID {
+			// Handle both short and full container IDs (similar to frontend logic)
+			if server.ContainerID == containerID || 
+			   (len(server.ContainerID) > len(containerID) && strings.HasPrefix(server.ContainerID, containerID)) ||
+			   (len(containerID) > len(server.ContainerID) && strings.HasPrefix(containerID, server.ContainerID)) {
 				if removeErr := a.configManager.RemoveConfiguredServer(server.ID); removeErr != nil {
 					// Log the error but don't fail the operation
 					fmt.Printf("Warning: Failed to remove configured server entry for container %s: %v\n", containerID, removeErr)
+				} else {
+					fmt.Printf("Successfully removed configured server entry for container %s\n", containerID)
 				}
 				break
 			}
@@ -443,11 +824,21 @@ func (a *App) PullImage(imageName string) error {
 
 // CreateContainer creates a new Docker container with neobelt labels
 func (a *App) CreateContainer(config ContainerCreateConfig) (string, error) {
+	fmt.Printf("[DEBUG] App.CreateContainer called with config: %+v\n", config)
+	
 	if a.dockerService == nil {
+		fmt.Printf("[ERROR] Docker service not available\n")
 		return "", fmt.Errorf("Docker service not available")
 	}
 
-	return a.dockerService.CreateContainer(a.ctx, config)
+	containerId, err := a.dockerService.CreateContainer(a.ctx, config)
+	if err != nil {
+		fmt.Printf("[ERROR] Docker service CreateContainer failed: %v\n", err)
+		return "", err
+	}
+	
+	fmt.Printf("[DEBUG] App.CreateContainer completed successfully, returning ID: %s\n", containerId)
+	return containerId, nil
 }
 
 // InstallServer installs a server from the registry (pulls image and updates config)
@@ -507,6 +898,52 @@ func (a *App) GetConfiguredServers() ([]ConfiguredServer, error) {
 	return a.configManager.GetConfiguredServers(), nil
 }
 
+// getMCPPortFromRegistry extracts the MCP port from registry server data
+func getMCPPortFromRegistry(server *RegistryServer) int {
+	if server.Ports == nil {
+		return 0
+	}
+	
+	// Try to get the "mcp" port from the ports map
+	if mcpPort, exists := server.Ports["mcp"]; exists {
+		switch v := mcpPort.(type) {
+		case float64:
+			return int(v)
+		case int:
+			return v
+		case string:
+			if port, err := strconv.Atoi(v); err == nil {
+				return port
+			}
+		}
+	}
+	
+	return 0
+}
+
+// getMCPPortFromInstalledServer extracts the MCP port from installed server data
+func getMCPPortFromInstalledServer(server *InstalledServer) int {
+	if server.Ports == nil {
+		return 0
+	}
+	
+	// Try to get the "mcp" port from the ports map
+	if mcpPort, exists := server.Ports["mcp"]; exists {
+		switch v := mcpPort.(type) {
+		case float64:
+			return int(v)
+		case int:
+			return v
+		case string:
+			if port, err := strconv.Atoi(v); err == nil {
+				return port
+			}
+		}
+	}
+	
+	return 0
+}
+
 // CreateConfiguredServer creates a new configured server entry when a container is created
 func (a *App) CreateConfiguredServer(installedServerID, containerName, containerID string, port int, environment, volumes map[string]string) error {
 	if a.configManager == nil {
@@ -519,6 +956,9 @@ func (a *App) CreateConfiguredServer(installedServerID, containerName, container
 		return fmt.Errorf("installed server with ID %s not found", installedServerID)
 	}
 
+	// Extract container port from registry data
+	containerPort := getMCPPortFromInstalledServer(installedServer)
+
 	configuredServer := ConfiguredServer{
 		ID:                fmt.Sprintf("configured-%d", time.Now().Unix()),
 		Name:              installedServer.Name,
@@ -527,6 +967,7 @@ func (a *App) CreateConfiguredServer(installedServerID, containerName, container
 		InstalledServerID: installedServerID,
 		DockerImage:       installedServer.DockerImage,
 		Port:              port,
+		ContainerPort:     containerPort,
 		Environment:       environment,
 		Volumes:           volumes,
 		CreatedDate:       time.Now().Format(time.RFC3339),

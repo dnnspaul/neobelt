@@ -634,7 +634,7 @@ export class Servers {
                 <button class="configure-server-btn w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" data-server-id="${serverId}" onclick="Modal.hide()">
                     Configure
                 </button>
-                <button class="view-logs-btn w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" data-server-id="${serverId}" onclick="Modal.hide(); window.serversInstance.debugServer('${serverId}')">
+                <button class="view-logs-btn w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" data-server-id="${serverId}">
                     View Logs
                 </button>
                 <button class="export-config-btn w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" data-server-id="${serverId}">
@@ -654,6 +654,11 @@ export class Servers {
 
         // Add event listeners for menu buttons
         setTimeout(() => {
+            document.querySelector('.view-logs-btn')?.addEventListener('click', () => {
+                Modal.hide();
+                this.debugServer(serverId);
+            });
+
             document.querySelector('.export-config-btn')?.addEventListener('click', () => {
                 Modal.hide();
                 // TODO: Implement export config functionality
@@ -1246,6 +1251,12 @@ export class Servers {
                                 <dd class="text-gray-900">${memoryRequirement}</dd>
                             </div>
                         ` : ''}
+                        ${server.docker_command ? `
+                            <div class="col-span-2">
+                                <dt class="text-gray-600">Docker Command:</dt>
+                                <dd class="text-gray-900 font-mono text-xs bg-gray-100 p-2 rounded mt-1">${server.docker_command}</dd>
+                            </div>
+                        ` : ''}
                     </dl>
                 </div>
                 
@@ -1423,14 +1434,60 @@ export class Servers {
 
     removeEnvironmentVariable(row) {
         if (row && row.getAttribute('data-required') !== 'true') {
+            // Find and remove any associated hint element that comes immediately after this row
+            const nextElement = row.nextElementSibling;
+            if (nextElement && nextElement.classList.contains('text-xs') && 
+                nextElement.classList.contains('text-gray-500') && 
+                nextElement.classList.contains('ml-2')) {
+                nextElement.remove();
+            }
             row.remove();
         }
     }
 
+    async findAvailablePort(startPort) {
+        // Get all currently configured servers to check for port conflicts
+        let configuredServers = [];
+        try {
+            configuredServers = await window.go.main.App.GetConfiguredServers();
+        } catch (error) {
+            console.warn('Failed to get configured servers for port checking:', error);
+        }
+
+        const usedPorts = new Set(configuredServers.map(server => server.port));
+        
+        // Find the first available port starting from startPort
+        let port = startPort;
+        while (usedPorts.has(port)) {
+            port++;
+            // Safety check to prevent infinite loop
+            if (port > 65535) {
+                throw new Error('No available ports found in valid range');
+            }
+        }
+        
+        return port;
+    }
+
     async createContainerFromForm(server) {
         const containerName = document.getElementById('container-name').value.trim();
-        // Handle port internally from server metadata
-        const port = server.ports && Object.keys(server.ports).length > 0 ? parseInt(Object.values(server.ports)[0]) || 0 : 0;
+        
+        // Get server defaults for configuration
+        let serverDefaults = {};
+        try {
+            serverDefaults = await window.go.main.App.GetServerDefaults();
+        } catch (error) {
+            console.warn('Failed to load server defaults, using fallbacks:', error);
+            serverDefaults = {
+                auto_start: false,
+                default_port: 8000,
+                max_memory_mb: 512,
+                restart_on_failure: true
+            };
+        }
+        
+        // Handle port allocation starting from default port range
+        const port = await this.findAvailablePort(serverDefaults.default_port || 8000);
         const volumesText = document.getElementById('volume-mounts').value.trim();
 
         if (!containerName) {
@@ -1467,22 +1524,44 @@ export class Servers {
                 });
             }
 
+            // Extract MCP port from registry data
+            let containerPort = 0;
+            if (server.ports && server.ports.mcp) {
+                containerPort = parseInt(server.ports.mcp) || 0;
+            }
+
             const config = {
                 name: containerName,
                 image: server.docker_image,
                 port: port,
+                container_port: containerPort,
                 environment: environment,
                 volumes: volumes,
+                docker_command: server.docker_command || '',
+                memory_limit_mb: serverDefaults.max_memory_mb || 512,
+                restart_policy: serverDefaults.restart_on_failure ? "on-failure" : "no",
                 labels: {
                     "neobelt.server-id": server.id,
                     "neobelt.server-name": server.name
                 }
             };
 
+            console.log('Creating container with config:', config);
             const containerId = await window.go.main.App.CreateContainer(config);
+            console.log('Container created successfully with ID:', containerId);
+            
+            // Start the container only if auto-start is enabled in server defaults
+            if (serverDefaults.auto_start) {
+                console.log('Auto-start enabled, starting container:', containerId);
+                await window.go.main.App.StartContainer(containerId);
+                console.log('Container started automatically');
+            } else {
+                console.log('Auto-start disabled, container created but not started');
+            }
             
             // Create a configured server entry for this container
             try {
+                console.log('Creating configured server entry');
                 await window.go.main.App.CreateConfiguredServer(
                     server.id,
                     containerName,
@@ -1491,16 +1570,19 @@ export class Servers {
                     environment,
                     volumes
                 );
+                console.log('Configured server entry created successfully');
             } catch (configError) {
                 console.warn('Failed to create configured server entry:', configError);
                 // Don't fail the whole operation - container was created successfully
             }
             
             Modal.hide();
+            console.log('Refreshing servers list...');
             await this.loadServers(); // Refresh the list
             
-            // Show success message
-            this.showSuccessModal('MCP Server Created', `MCP Server "${containerName}" has been created successfully. Container ID: ${containerId.substring(0, 12)}`);
+            // Check container status and show appropriate modal
+            console.log('Checking container creation result...');
+            await this.showContainerCreationResult(containerId, containerName);
         } catch (error) {
             console.error('Failed to create container:', error);
             this.showErrorModal('Create MCP Server Failed', `Failed to create MCP Server: ${error.message || error}`);
@@ -1532,6 +1614,341 @@ export class Servers {
             title: title,
             size: 'md'
         });
+    }
+
+    async showContainerCreationResult(containerId, containerName) {
+        try {
+            console.log(`Checking container creation result for ID: ${containerId}, Name: ${containerName}`);
+            
+            // Wait a moment for container to stabilize
+            console.log('Waiting 2 seconds for container to stabilize...');
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
+            // Get updated container info
+            console.log('Fetching managed containers...');
+            const containers = await window.go.main.App.GetManagedContainers();
+            console.log(`Found ${containers.length} managed containers:`, containers.map(c => ({ id: c.id, name: c.name, state: c.state })));
+            
+            // Try different matching strategies
+            console.log(`Looking for container with ID: ${containerId}`);
+            let container = containers.find(c => c.id === containerId);
+            console.log('Exact match result:', container);
+            
+            if (!container) {
+                console.log('Exact match failed, trying prefix match...');
+                container = containers.find(c => c.id.startsWith(containerId));
+                console.log('Prefix match result:', container);
+            }
+            
+            if (!container) {
+                console.log('Prefix match failed, trying reverse prefix match...');
+                container = containers.find(c => containerId.startsWith(c.id));
+                console.log('Reverse prefix match result:', container);
+            }
+            
+            if (!container) {
+                console.error('Container not found in any managed containers list');
+                console.log('Available container IDs:', containers.map(c => c.id));
+                console.log('Searching container ID:', containerId);
+                
+                // Try to get ALL containers (not just managed ones) for debugging
+                try {
+                    console.log('Attempting to get container logs to verify container exists...');
+                    const logs = await window.go.main.App.GetContainerLogs(containerId, 10);
+                    console.log('Container logs retrieved successfully, container exists but not in managed list');
+                    
+                    // Show a different error message with more debugging information
+                    this.showContainerNotInManagedListModal(containerId, containerName, containers);
+                } catch (logError) {
+                    console.error('Container logs also failed, container may not exist:', logError);
+                    this.showContainerNotFoundModal(containerId, containerName, containers);
+                }
+                return;
+            }
+
+            console.log(`Container found: ID=${container.id}, State=${container.state}, Status=${container.status}`);
+            const isRunning = container.state === 'running';
+
+            if (isRunning) {
+                console.log('Container is running successfully');
+                // Container is running successfully
+                this.showSuccessModal('MCP Server Created', `MCP Server "${containerName}" has been created and is running successfully. Container ID: ${containerId.substring(0, 12)}`);
+            } else {
+                console.log('Container has issues, getting logs...');
+                // Container has issues, show detailed modal with logs
+                const logs = await window.go.main.App.GetContainerLogs(containerId, 50);
+                console.log('Container logs retrieved for troubleshooting');
+                this.showContainerIssueModal(containerName, container, logs);
+            }
+        } catch (error) {
+            console.error('Failed to check container status:', error);
+            // Fallback to basic success message
+            this.showSuccessModal('MCP Server Created', `MCP Server "${containerName}" has been created. Container ID: ${containerId.substring(0, 12)}`);
+        }
+    }
+
+    showContainerNotInManagedListModal(containerId, containerName, managedContainers) {
+        const content = `
+            <div class="space-y-4">
+                <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                    <div class="flex">
+                        <svg class="w-5 h-5 text-yellow-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
+                        </svg>
+                        <div class="ml-3">
+                            <h4 class="text-sm font-medium text-yellow-800">Container Created But Not Visible</h4>
+                            <p class="text-sm text-yellow-800 mt-1">
+                                Container "${containerName}" was created successfully but is not appearing in the managed containers list.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                    <h4 class="font-medium text-gray-900 mb-2">Debugging Information</h4>
+                    <dl class="grid grid-cols-1 gap-2 text-sm">
+                        <div class="flex justify-between">
+                            <dt class="text-gray-600">Container ID:</dt>
+                            <dd class="text-gray-900 font-mono text-xs">${containerId}</dd>
+                        </div>
+                        <div class="flex justify-between">
+                            <dt class="text-gray-600">Container Name:</dt>
+                            <dd class="text-gray-900">${containerName}</dd>
+                        </div>
+                        <div class="flex justify-between">
+                            <dt class="text-gray-600">Managed Containers Found:</dt>
+                            <dd class="text-gray-900">${managedContainers.length}</dd>
+                        </div>
+                    </dl>
+                    ${managedContainers.length > 0 ? `
+                        <div class="mt-3">
+                            <h5 class="text-sm font-medium text-gray-700 mb-1">Managed Container IDs:</h5>
+                            <ul class="text-xs text-gray-600 space-y-1">
+                                ${managedContainers.map(c => `<li class="font-mono">${c.id} (${c.name})</li>`).join('')}
+                            </ul>
+                        </div>
+                    ` : ''}
+                </div>
+
+                <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <div class="flex">
+                        <svg class="w-5 h-5 text-blue-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        <div class="ml-3">
+                            <h4 class="text-sm font-medium text-blue-800">Possible Causes</h4>
+                            <ul class="text-sm text-blue-800 mt-1 list-disc list-inside space-y-1">
+                                <li>Container labels may not be set correctly (neobelt.managed-by=true)</li>
+                                <li>Docker service may have permission issues accessing the container</li>
+                                <li>Container may have been created but not properly labeled</li>
+                                <li>There may be a timing issue with Docker container indexing</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex justify-end space-x-3">
+                    <button class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50" onclick="Modal.hide()">
+                        Close
+                    </button>
+                    <button id="refresh-check-btn" class="px-4 py-2 text-sm font-medium text-white bg-primary-600 border border-transparent rounded-md hover:bg-primary-700" data-container-id="${containerId}" data-container-name="${containerName}">
+                        Refresh & Check Again
+                    </button>
+                </div>
+            </div>
+        `;
+
+        Modal.show(content, {
+            title: 'Container Visibility Issue',
+            size: 'lg'
+        });
+
+        // Add refresh functionality
+        setTimeout(() => {
+            document.getElementById('refresh-check-btn')?.addEventListener('click', async (e) => {
+                const containerId = e.target.getAttribute('data-container-id');
+                const containerName = e.target.getAttribute('data-container-name');
+                Modal.hide();
+                console.log('Manual refresh requested, re-checking container...');
+                await this.loadServers();
+                await this.showContainerCreationResult(containerId, containerName);
+            });
+        }, 100);
+    }
+
+    showContainerNotFoundModal(containerId, containerName, managedContainers) {
+        const content = `
+            <div class="space-y-4">
+                <div class="bg-red-50 border border-red-200 rounded-lg p-4">
+                    <div class="flex">
+                        <svg class="w-5 h-5 text-red-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        <div class="ml-3">
+                            <h4 class="text-sm font-medium text-red-800">Container Not Found</h4>
+                            <p class="text-sm text-red-800 mt-1">
+                                Container "${containerName}" could not be found in the system after creation.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                    <h4 class="font-medium text-gray-900 mb-2">Debugging Information</h4>
+                    <dl class="grid grid-cols-1 gap-2 text-sm">
+                        <div class="flex justify-between">
+                            <dt class="text-gray-600">Container ID:</dt>
+                            <dd class="text-gray-900 font-mono text-xs">${containerId}</dd>
+                        </div>
+                        <div class="flex justify-between">
+                            <dt class="text-gray-600">Container Name:</dt>
+                            <dd class="text-gray-900">${containerName}</dd>
+                        </div>
+                        <div class="flex justify-between">
+                            <dt class="text-gray-600">Managed Containers Found:</dt>
+                            <dd class="text-gray-900">${managedContainers.length}</dd>
+                        </div>
+                    </dl>
+                    ${managedContainers.length > 0 ? `
+                        <div class="mt-3">
+                            <h5 class="text-sm font-medium text-gray-700 mb-1">Available Managed Containers:</h5>
+                            <ul class="text-xs text-gray-600 space-y-1">
+                                ${managedContainers.map(c => `<li class="font-mono">${c.id} (${c.name}) - ${c.state}</li>`).join('')}
+                            </ul>
+                        </div>
+                    ` : ''}
+                </div>
+
+                <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <div class="flex">
+                        <svg class="w-5 h-5 text-blue-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        <div class="ml-3">
+                            <h4 class="text-sm font-medium text-blue-800">Possible Causes</h4>
+                            <ul class="text-sm text-blue-800 mt-1 list-disc list-inside space-y-1">
+                                <li>Container creation may have failed silently</li>
+                                <li>Docker daemon may not be running or accessible</li>
+                                <li>Insufficient permissions to create containers</li>
+                                <li>Image pull may have failed during container creation</li>
+                                <li>Container may have been created but immediately exited</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex justify-end space-x-3">
+                    <button class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50" onclick="Modal.hide()">
+                        Close
+                    </button>
+                </div>
+            </div>
+        `;
+
+        Modal.show(content, {
+            title: 'Container Creation Failed',
+            size: 'lg'
+        });
+    }
+
+    showContainerIssueModal(containerName, container, logs) {
+        const statusColor = container.state === 'restarting' ? 'yellow' : 'red';
+        const statusIcon = container.state === 'restarting' ? 
+            '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path>' :
+            '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>';
+
+        const content = `
+            <div class="space-y-4">
+                <div class="bg-${statusColor}-50 border border-${statusColor}-200 rounded-lg p-4">
+                    <div class="flex">
+                        <svg class="w-5 h-5 text-${statusColor}-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            ${statusIcon}
+                        </svg>
+                        <div class="ml-3">
+                            <h4 class="text-sm font-medium text-${statusColor}-800">Container Status Issue</h4>
+                            <p class="text-sm text-${statusColor}-800 mt-1">
+                                MCP Server "${containerName}" was created but ${container.state === 'restarting' ? 'is restarting repeatedly' : 'failed to start properly'}.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                    <h4 class="font-medium text-gray-900 mb-2">Container Information</h4>
+                    <dl class="grid grid-cols-2 gap-2 text-sm">
+                        <div class="flex justify-between">
+                            <dt class="text-gray-600">Status:</dt>
+                            <dd class="text-gray-900">${container.status}</dd>
+                        </div>
+                        <div class="flex justify-between">
+                            <dt class="text-gray-600">State:</dt>
+                            <dd class="text-gray-900">${container.state}</dd>
+                        </div>
+                        <div class="flex justify-between">
+                            <dt class="text-gray-600">Container ID:</dt>
+                            <dd class="text-gray-900 font-mono text-xs">${container.id.substring(0, 12)}</dd>
+                        </div>
+                        <div class="flex justify-between">
+                            <dt class="text-gray-600">Image:</dt>
+                            <dd class="text-gray-900 font-mono text-xs">${container.image}</dd>
+                        </div>
+                    </dl>
+                </div>
+
+                <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                    <h4 class="font-medium text-gray-900 mb-2">Container Logs (last 50 lines)</h4>
+                    <div class="max-h-64 overflow-y-auto">
+                        <pre class="text-xs text-gray-700 whitespace-pre-wrap font-mono">${logs || 'No logs available'}</pre>
+                    </div>
+                </div>
+
+                <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <div class="flex">
+                        <svg class="w-5 h-5 text-blue-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        <div class="ml-3">
+                            <h4 class="text-sm font-medium text-blue-800">Troubleshooting Tips</h4>
+                            <ul class="text-sm text-blue-800 mt-1 list-disc list-inside space-y-1">
+                                <li>Check if required environment variables are properly set</li>
+                                <li>Verify that volume mounts point to existing directories</li>
+                                <li>Ensure the container has proper permissions for mounted volumes</li>
+                                <li>Review the server documentation for specific requirements</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex justify-end space-x-3">
+                    <button class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50" onclick="Modal.hide()">
+                        Close
+                    </button>
+                    <button id="retry-start-btn" class="px-4 py-2 text-sm font-medium text-white bg-primary-600 border border-transparent rounded-md hover:bg-primary-700" data-container-id="${container.id}">
+                        Try Starting Again
+                    </button>
+                </div>
+            </div>
+        `;
+
+        Modal.show(content, {
+            title: 'MCP Server Created with Issues',
+            size: 'xl'
+        });
+
+        // Add retry functionality
+        setTimeout(() => {
+            document.getElementById('retry-start-btn')?.addEventListener('click', async (e) => {
+                const containerId = e.target.getAttribute('data-container-id');
+                Modal.hide();
+                try {
+                    await window.go.main.App.StartContainer(containerId);
+                    await this.loadServers();
+                    this.showSuccessModal('Container Restarted', 'Container has been restarted. Please check if it\'s running properly now.');
+                } catch (error) {
+                    this.showErrorModal('Restart Failed', `Failed to restart container: ${error.message || error}`);
+                }
+            });
+        }, 100);
     }
 
     showManualInstallWizard() {

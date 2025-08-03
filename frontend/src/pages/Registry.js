@@ -966,11 +966,7 @@ export class Registry {
                         </svg>
                         <div class="ml-3">
                             <h4 class="text-sm font-medium text-green-800">What's Next?</h4>
-                            <ul class="mt-2 text-sm text-green-700 space-y-1">
-                                <li>• Docker image has been downloaded and is ready to use</li>
-                                <li>• Server has been added to your installed servers list</li>
-                                <li>• Go to the Servers page to create and configure a container instance</li>
-                            </ul>
+                            <p class="mt-1 text-sm text-green-700">Go to the Servers page to create and configure a mcp server instance.</p>
                         </div>
                     </div>
                 </div>

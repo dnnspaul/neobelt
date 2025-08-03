@@ -20,8 +20,7 @@ export class Settings {
                 autoStart: false,
                 defaultPort: 8000,
                 maxMemory: 512,
-                restartOnFailure: true,
-                logLevel: 'info'
+                restartOnFailure: true
             },
             security: {
                 requireConfirmation: true,
@@ -35,6 +34,35 @@ export class Settings {
                 customRegistries: []
             }
         };
+        this.originalSettings = null;
+    }
+
+    async loadServerDefaults() {
+        try {
+            const serverDefaults = await window.go.main.App.GetServerDefaults();
+            this.settings.servers = {
+                autoStart: serverDefaults.auto_start || false,
+                defaultPort: serverDefaults.default_port || 8000,
+                maxMemory: serverDefaults.max_memory_mb || 512,
+                restartOnFailure: serverDefaults.restart_on_failure !== undefined ? serverDefaults.restart_on_failure : true
+            };
+            this.originalSettings = JSON.parse(JSON.stringify(this.settings));
+        } catch (error) {
+            console.error('Failed to load server defaults:', error);
+        }
+    }
+
+    updateUI() {
+        // Update form fields with loaded settings
+        const autoStartField = document.getElementById('autoStart');
+        const defaultPortField = document.getElementById('defaultPort');
+        const maxMemoryField = document.getElementById('maxMemory');
+        const restartOnFailureField = document.getElementById('restartOnFailure');
+
+        if (autoStartField) autoStartField.checked = this.settings.servers.autoStart;
+        if (defaultPortField) defaultPortField.value = this.settings.servers.defaultPort;
+        if (maxMemoryField) maxMemoryField.value = this.settings.servers.maxMemory;
+        if (restartOnFailureField) restartOnFailureField.checked = this.settings.servers.restartOnFailure;
     }
 
     render() {
@@ -304,7 +332,7 @@ export class Settings {
                                                 <p class="text-sm text-gray-500">Start servers immediately after installation</p>
                                             </div>
                                             <label class="relative inline-flex items-center cursor-pointer">
-                                                <input type="checkbox" class="sr-only peer" ${this.settings.servers.autoStart ? 'checked' : ''}>
+                                                <input id="autoStart" type="checkbox" class="sr-only peer" ${this.settings.servers.autoStart ? 'checked' : ''}>
                                                 <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
                                             </label>
                                         </div>
@@ -315,7 +343,7 @@ export class Settings {
                                                 <p class="text-sm text-gray-500">Automatically restart failed servers</p>
                                             </div>
                                             <label class="relative inline-flex items-center cursor-pointer">
-                                                <input type="checkbox" class="sr-only peer" ${this.settings.servers.restartOnFailure ? 'checked' : ''}>
+                                                <input id="restartOnFailure" type="checkbox" class="sr-only peer" ${this.settings.servers.restartOnFailure ? 'checked' : ''}>
                                                 <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
                                             </label>
                                         </div>
@@ -328,37 +356,15 @@ export class Settings {
                                     <div class="grid grid-cols-2 gap-6">
                                         <div>
                                             <label class="block text-sm font-medium text-gray-700 mb-2">Default port range start</label>
-                                            <input type="number" value="${this.settings.servers.defaultPort}" min="1024" max="65535" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500">
+                                            <input id="defaultPort" type="number" value="${this.settings.servers.defaultPort}" min="1024" max="65535" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500">
                                         </div>
                                         <div>
                                             <label class="block text-sm font-medium text-gray-700 mb-2">Maximum memory per server (MB)</label>
-                                            <input type="number" value="${this.settings.servers.maxMemory}" min="64" max="2048" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500">
+                                            <input id="maxMemory" type="number" value="${this.settings.servers.maxMemory}" min="64" max="2048" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500">
                                         </div>
                                     </div>
                                 </div>
 
-                                <!-- Logging -->
-                                <div class="bg-white border border-gray-200 rounded-lg p-6">
-                                    <h3 class="text-md font-medium text-gray-900 mb-4">Logging</h3>
-                                    <div class="space-y-4">
-                                        <div>
-                                            <label class="block text-sm font-medium text-gray-700 mb-2">Log level</label>
-                                            <div class="relative">
-                                                <select class="w-full px-3 py-2 pr-8 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500 focus:border-primary-500 bg-white appearance-none cursor-pointer">
-                                                    <option value="debug" ${this.settings.servers.logLevel === 'debug' ? 'selected' : ''}>Debug</option>
-                                                    <option value="info" ${this.settings.servers.logLevel === 'info' ? 'selected' : ''}>Info</option>
-                                                    <option value="warn" ${this.settings.servers.logLevel === 'warn' ? 'selected' : ''}>Warning</option>
-                                                    <option value="error" ${this.settings.servers.logLevel === 'error' ? 'selected' : ''}>Error</option>
-                                                </select>
-                                                <div class="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
-                                                    <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-                                                    </svg>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
                             </div>
                         </div>
 
@@ -492,6 +498,11 @@ export class Settings {
     }
 
     attachEventListeners() {
+        // Load server defaults and update UI
+        this.loadServerDefaults().then(() => {
+            this.updateUI();
+        });
+
         // Header buttons
         const saveBtn = document.getElementById('save-settings-btn');
         const resetBtn = document.getElementById('reset-settings-btn');
@@ -579,25 +590,76 @@ export class Settings {
         }
     }
 
-    saveSettings() {
+    async saveSettings() {
         console.log('Saving settings...');
         
-        const content = `
-            <div class="text-center space-y-4">
-                <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
-                    <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                    </svg>
-                </div>
-                <h3 class="text-lg font-semibold text-gray-900">Settings Saved</h3>
-                <p class="text-gray-600">Your preferences have been saved successfully.</p>
-            </div>
-        `;
+        try {
+            // Collect Server Defaults values from the form
+            const autoStart = document.getElementById('autoStart')?.checked || false;
+            const defaultPort = parseInt(document.getElementById('defaultPort')?.value) || 8000;
+            const maxMemory = parseInt(document.getElementById('maxMemory')?.value) || 512;
+            const restartOnFailure = document.getElementById('restartOnFailure')?.checked !== false;
 
-        Modal.show(content, {
-            title: 'Settings Saved',
-            size: 'sm'
-        });
+            const serverDefaults = {
+                auto_start: autoStart,
+                default_port: defaultPort,
+                max_memory_mb: maxMemory,
+                restart_on_failure: restartOnFailure
+            };
+
+            // Save to backend
+            await window.go.main.App.UpdateServerDefaults(serverDefaults);
+
+            // Update local settings
+            this.settings.servers = {
+                autoStart,
+                defaultPort,
+                maxMemory,
+                restartOnFailure
+            };
+
+            const content = `
+                <div class="text-center space-y-4">
+                    <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
+                        <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                        </svg>
+                    </div>
+                    <h3 class="text-lg font-semibold text-gray-900">Settings Saved</h3>
+                    <p class="text-gray-600">Your server defaults have been saved successfully.</p>
+                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 mt-4">
+                        <p class="text-sm text-blue-800">
+                            <strong>Note:</strong> Running containers will be automatically recreated to apply the new settings 
+                            (memory limits, restart policies, and port changes). This may cause a brief interruption in service.
+                        </p>
+                    </div>
+                </div>
+            `;
+
+            Modal.show(content, {
+                title: 'Settings Saved',
+                size: 'md'
+            });
+        } catch (error) {
+            console.error('Failed to save settings:', error);
+            
+            const content = `
+                <div class="text-center space-y-4">
+                    <div class="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto">
+                        <svg class="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </div>
+                    <h3 class="text-lg font-semibold text-gray-900">Save Failed</h3>
+                    <p class="text-gray-600">Failed to save settings: ${error.message || 'Unknown error'}</p>
+                </div>
+            `;
+
+            Modal.show(content, {
+                title: 'Error',
+                size: 'sm'
+            });
+        }
     }
 
     resetSettings() {
@@ -609,8 +671,8 @@ export class Settings {
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
                         </svg>
                     </div>
-                    <h3 class="text-lg font-semibold text-gray-900">Reset to Defaults</h3>
-                    <p class="text-gray-600">This will reset all settings to their default values. This action cannot be undone.</p>
+                    <h3 class="text-lg font-semibold text-gray-900">Reset Server Defaults</h3>
+                    <p class="text-gray-600">This will reset server default settings to their initial values. This action cannot be undone.</p>
                 </div>
 
                 <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
@@ -620,7 +682,7 @@ export class Settings {
                         </svg>
                         <div class="ml-3">
                             <h4 class="text-sm font-medium text-yellow-800">Warning</h4>
-                            <p class="mt-1 text-sm text-yellow-700">Server configurations and Claude integration settings will be reset. Active servers will not be affected.</p>
+                            <p class="mt-1 text-sm text-yellow-700">Server default settings will be reset to: Auto-start off, Port 8000, Memory 512MB, Restart on failure enabled.</p>
                         </div>
                     </div>
                 </div>
@@ -642,9 +704,69 @@ export class Settings {
         });
 
         setTimeout(() => {
-            document.getElementById('confirm-reset')?.addEventListener('click', () => {
+            document.getElementById('confirm-reset')?.addEventListener('click', async () => {
                 Modal.hide();
-                console.log('Resetting settings...');
+                try {
+                    // Reset to default values
+                    const defaultServerDefaults = {
+                        auto_start: false,
+                        default_port: 8000,
+                        max_memory_mb: 512,
+                        restart_on_failure: true
+                    };
+
+                    await window.go.main.App.UpdateServerDefaults(defaultServerDefaults);
+                    
+                    // Update the UI
+                    document.getElementById('autoStart').checked = false;
+                    document.getElementById('defaultPort').value = '8000';
+                    document.getElementById('maxMemory').value = '512';
+                    document.getElementById('restartOnFailure').checked = true;
+
+                    // Update local settings
+                    this.settings.servers = {
+                        autoStart: false,
+                        defaultPort: 8000,
+                        maxMemory: 512,
+                        restartOnFailure: true
+                    };
+
+                    const successContent = `
+                        <div class="text-center space-y-4">
+                            <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
+                                <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                                </svg>
+                            </div>
+                            <h3 class="text-lg font-semibold text-gray-900">Settings Reset</h3>
+                            <p class="text-gray-600">Server default settings have been reset to their initial values.</p>
+                        </div>
+                    `;
+
+                    Modal.show(successContent, {
+                        title: 'Reset Complete',
+                        size: 'sm'
+                    });
+                } catch (error) {
+                    console.error('Failed to reset settings:', error);
+                    
+                    const errorContent = `
+                        <div class="text-center space-y-4">
+                            <div class="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto">
+                                <svg class="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                </svg>
+                            </div>
+                            <h3 class="text-lg font-semibold text-gray-900">Reset Failed</h3>
+                            <p class="text-gray-600">Failed to reset settings: ${error.message || 'Unknown error'}</p>
+                        </div>
+                    `;
+
+                    Modal.show(errorContent, {
+                        title: 'Error',
+                        size: 'sm'
+                    });
+                }
             });
         }, 100);
     }

@@ -11,6 +11,7 @@ import (
 // Configuration represents the application configuration
 type Configuration struct {
 	App                AppConfig             `json:"app" mapstructure:"app"`
+	ServerDefaults     ServerDefaultsConfig  `json:"server_defaults" mapstructure:"server_defaults"`
 	Registries         []Registry            `json:"registries" mapstructure:"registries"`
 	InstalledServers   []InstalledServer     `json:"installed_servers" mapstructure:"installed_servers"`
 	ConfiguredServers  []ConfiguredServer    `json:"configured_servers" mapstructure:"configured_servers"`
@@ -23,6 +24,14 @@ type AppConfig struct {
 	AutoRefresh     bool   `json:"auto_refresh" mapstructure:"auto_refresh"`
 	RefreshInterval int    `json:"refresh_interval" mapstructure:"refresh_interval"` // minutes
 	CheckForUpdates bool   `json:"check_for_updates" mapstructure:"check_for_updates"`
+}
+
+// ServerDefaultsConfig contains default settings for new servers
+type ServerDefaultsConfig struct {
+	AutoStart        bool `json:"auto_start" mapstructure:"auto_start"`
+	DefaultPort      int  `json:"default_port" mapstructure:"default_port"`
+	MaxMemoryMB      int  `json:"max_memory_mb" mapstructure:"max_memory_mb"`
+	RestartOnFailure bool `json:"restart_on_failure" mapstructure:"restart_on_failure"`
 }
 
 // InstalledServer represents a server that has been installed (Docker image pulled)
@@ -59,6 +68,7 @@ type ConfiguredServer struct {
 	InstalledServerID string           `json:"installed_server_id" mapstructure:"installed_server_id"`
 	DockerImage      string            `json:"docker_image" mapstructure:"docker_image"`
 	Port             int               `json:"port" mapstructure:"port"`
+	ContainerPort    int               `json:"container_port" mapstructure:"container_port"` // MCP port from registry
 	Environment      map[string]string `json:"environment" mapstructure:"environment"`
 	Volumes          map[string]string `json:"volumes" mapstructure:"volumes"`
 	CreatedDate      string            `json:"created_date" mapstructure:"created_date"`
@@ -101,6 +111,10 @@ func NewConfigManager() (*ConfigManager, error) {
 	v.SetDefault("app.auto_refresh", true)
 	v.SetDefault("app.refresh_interval", 5)
 	v.SetDefault("app.check_for_updates", true)
+	v.SetDefault("server_defaults.auto_start", false)
+	v.SetDefault("server_defaults.default_port", 8000)
+	v.SetDefault("server_defaults.max_memory_mb", 512)
+	v.SetDefault("server_defaults.restart_on_failure", true)
 	v.SetDefault("registries", []Registry{})
 	v.SetDefault("installed_servers", []InstalledServer{})
 	v.SetDefault("configured_servers", []ConfiguredServer{})
@@ -147,6 +161,7 @@ func (cm *ConfigManager) Save() error {
 	// Update viper with current config
 	if cm.config != nil {
 		cm.viper.Set("app", cm.config.App)
+		cm.viper.Set("server_defaults", cm.config.ServerDefaults)
 		cm.viper.Set("registries", cm.config.Registries)
 		cm.viper.Set("installed_servers", cm.config.InstalledServers)
 		cm.viper.Set("configured_servers", cm.config.ConfiguredServers)
