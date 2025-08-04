@@ -15,7 +15,6 @@
 go.work
 
 # Wails build output
-build/
 app/
 dist/
 

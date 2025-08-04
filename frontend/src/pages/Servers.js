@@ -5,56 +5,6 @@ export class Servers {
     constructor() {
         this.servers = [];
         this.loading = false;
-        this.mockServers = [
-            {
-                id: 1,
-                name: 'File System Server',
-                description: 'Provides access to local file system operations',
-                version: '1.2.0',
-                status: 'running',
-                uptime: '2d 4h 12m',
-                memory: '45MB',
-                cpu: '2%',
-                port: 8001,
-                config: { allowedPaths: ['/Users/documents'], readOnly: false }
-            },
-            {
-                id: 2,
-                name: 'Database Connector',
-                description: 'Connects to various database systems',
-                version: '2.1.5',
-                status: 'running',
-                uptime: '1d 12h 45m',
-                memory: '32MB',
-                cpu: '1%',
-                port: 8002,
-                config: { databases: ['postgresql://localhost:5432'], maxConnections: 10 }
-            },
-            {
-                id: 3,
-                name: 'Web Scraper',
-                description: 'Scrapes web content and extracts data',
-                version: '0.8.2',
-                status: 'stopped',
-                uptime: '0h',
-                memory: '0MB',
-                cpu: '0%',
-                port: 8003,
-                config: { userAgent: 'Neobelt-Scraper', rateLimit: 1000 }
-            },
-            {
-                id: 4,
-                name: 'Email Handler',
-                description: 'Manages email operations and notifications',
-                version: '1.0.1',
-                status: 'error',
-                uptime: '0h',
-                memory: '0MB',
-                cpu: '0%',
-                port: 8004,
-                config: { smtp: 'smtp.gmail.com:587', ssl: true }
-            }
-        ];
     }
 
     render() {
@@ -138,7 +88,6 @@ export class Servers {
                                                     <h3 class="text-lg font-semibold text-gray-900">${server.name}</h3>
                                                     <span class="px-2 py-1 text-xs font-medium ${this.getStatusBadgeColor(server.status)} rounded-full">${server.status.toUpperCase()}</span>
                                                 </div>
-                                                <p class="text-gray-600 mt-1 selectable-text">${server.description}</p>
                                                 <div class="flex items-center space-x-4 mt-2 text-sm text-gray-500">
                                                     <span>Version: ${server.version}</span>
                                                     <span>Port: ${server.port}</span>
