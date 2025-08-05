@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -42,6 +43,7 @@ type ContainerInfo struct {
 	CPU         string            `json:"cpu"`
 	Memory      string            `json:"memory"`
 	Port        int               `json:"port"`
+	Version     string            `json:"version"`
 	Environment map[string]string `json:"environment"`
 	Volumes     []string          `json:"volumes"`
 	CreatedAt   time.Time         `json:"created_at"`
@@ -158,6 +160,16 @@ func (ds *DockerService) getContainerInfo(ctx context.Context, containerID strin
 	createdAt, _ := time.Parse(time.RFC3339Nano, inspect.Created)
 	startedAt, _ := time.Parse(time.RFC3339Nano, inspect.State.StartedAt)
 
+	// Get real-time CPU and memory stats for running containers
+	cpu := "0%"
+	memory := "0MB"
+	if inspect.State.Running {
+		if cpuStat, memoryStat, err := ds.GetContainerStats(ctx, containerID); err == nil {
+			cpu = cpuStat
+			memory = memoryStat
+		}
+	}
+
 	return &ContainerInfo{
 		ID:          inspect.ID[:12], // Short ID
 		Name:        strings.TrimPrefix(inspect.Name, "/"),
@@ -165,9 +177,10 @@ func (ds *DockerService) getContainerInfo(ctx context.Context, containerID strin
 		Status:      inspect.State.Status,
 		State:       ds.mapContainerState(inspect.State.Status),
 		Uptime:      uptime,
-		CPU:         "0%",  // Will be populated by stats API if needed
-		Memory:      "0MB", // Will be populated by stats API if needed
+		CPU:         cpu,
+		Memory:      memory,
 		Port:        port,
+		Version:     "", // Will be populated by App.GetManagedContainers
 		Environment: envMap,
 		Volumes:     volumes,
 		CreatedAt:   createdAt,
@@ -516,15 +529,54 @@ func (ds *DockerService) GetContainerStats(ctx context.Context, containerID stri
 	}
 	defer stats.Body.Close()
 
-	// For simplicity, we'll skip the complex stats calculation and return placeholder values
-	// In a real implementation, you would parse the stats JSON properly
-	_, err = io.ReadAll(stats.Body)
+	// Read and parse the stats JSON
+	statsData, err := io.ReadAll(stats.Body)
 	if err != nil {
 		return "0%", "0MB", fmt.Errorf("failed to read stats: %w", err)
 	}
 
-	// Return placeholder values - these could be enhanced to parse actual stats
-	return "2%", "45MB", nil
+	return parseContainerStats(statsData)
+}
+
+// parseContainerStats parses Docker stats JSON and returns CPU and memory usage
+func parseContainerStats(statsData []byte) (string, string, error) {
+	var stats struct {
+		CPUStats struct {
+			CPUUsage struct {
+				TotalUsage uint64 `json:"total_usage"`
+			} `json:"cpu_usage"`
+			SystemCPUUsage uint64 `json:"system_cpu_usage"`
+		} `json:"cpu_stats"`
+		PreCPUStats struct {
+			CPUUsage struct {
+				TotalUsage uint64 `json:"total_usage"`
+			} `json:"cpu_usage"`
+			SystemCPUUsage uint64 `json:"system_cpu_usage"`
+		} `json:"precpu_stats"`
+		MemoryStats struct {
+			Usage uint64 `json:"usage"`
+			Limit uint64 `json:"limit"`
+		} `json:"memory_stats"`
+	}
+
+	err := json.Unmarshal(statsData, &stats)
+	if err != nil {
+		return "0%", "0MB", fmt.Errorf("failed to parse stats JSON: %w", err)
+	}
+
+	// Calculate CPU percentage
+	cpuPercent := 0.0
+	cpuDelta := float64(stats.CPUStats.CPUUsage.TotalUsage - stats.PreCPUStats.CPUUsage.TotalUsage)
+	systemDelta := float64(stats.CPUStats.SystemCPUUsage - stats.PreCPUStats.SystemCPUUsage)
+
+	if systemDelta > 0 && cpuDelta > 0 {
+		cpuPercent = (cpuDelta / systemDelta) * 100.0
+	}
+
+	// Format memory usage in MB
+	memoryMB := float64(stats.MemoryStats.Usage) / (1024 * 1024)
+
+	return fmt.Sprintf("%.1f%%", cpuPercent), fmt.Sprintf("%.0fMB", memoryMB), nil
 }
 
 // parseDockerCommand parses docker command arguments into a slice for CMD

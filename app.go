@@ -11,6 +11,14 @@ import (
 	"time"
 )
 
+// min returns the minimum of two integers
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 // App struct
 type App struct {
 	ctx           context.Context
@@ -671,6 +679,41 @@ func (a *App) GetManagedContainers() ([]ContainerInfo, error) {
 	if err != nil {
 		fmt.Printf("[ERROR] Docker service GetManagedContainers failed: %v\n", err)
 		return nil, err
+	}
+
+	// Enrich containers with version information from configured servers
+	if a.configManager != nil {
+		configuredServers := a.configManager.GetConfiguredServers()
+		
+		// Create a map for quick lookup by container ID
+		configMap := make(map[string]ConfiguredServer)
+		for _, config := range configuredServers {
+			if config.ContainerID != "" {
+				configMap[config.ContainerID] = config
+			}
+		}
+		
+		// Enrich each container with version information
+		for i := range containers {
+			container := &containers[i]
+			
+			// Look for matching configured server by container ID (handle both short and full IDs)
+			for configContainerID, config := range configMap {
+				if configContainerID == container.ID || 
+					configContainerID[:min(len(configContainerID), len(container.ID))] == container.ID ||
+					container.ID[:min(len(configContainerID), len(container.ID))] == configContainerID {
+					
+					container.Version = config.Version
+					fmt.Printf("[DEBUG] Enriched container %s with version %s\n", container.ID, container.Version)
+					break
+				}
+			}
+			
+			// If no version found, set default
+			if container.Version == "" {
+				container.Version = "unknown"
+			}
+		}
 	}
 
 	fmt.Printf("[DEBUG] App.GetManagedContainers returning %d containers\n", len(containers))
