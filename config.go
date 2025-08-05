@@ -10,11 +10,11 @@ import (
 
 // Configuration represents the application configuration
 type Configuration struct {
-	App                AppConfig             `json:"app" mapstructure:"app"`
-	ServerDefaults     ServerDefaultsConfig  `json:"server_defaults" mapstructure:"server_defaults"`
-	Registries         []Registry            `json:"registries" mapstructure:"registries"`
-	InstalledServers   []InstalledServer     `json:"installed_servers" mapstructure:"installed_servers"`
-	ConfiguredServers  []ConfiguredServer    `json:"configured_servers" mapstructure:"configured_servers"`
+	App               AppConfig            `json:"app" mapstructure:"app"`
+	ServerDefaults    ServerDefaultsConfig `json:"server_defaults" mapstructure:"server_defaults"`
+	Registries        []Registry           `json:"registries" mapstructure:"registries"`
+	InstalledServers  []InstalledServer    `json:"installed_servers" mapstructure:"installed_servers"`
+	ConfiguredServers []ConfiguredServer   `json:"configured_servers" mapstructure:"configured_servers"`
 }
 
 // AppConfig contains general application settings
@@ -36,44 +36,45 @@ type ServerDefaultsConfig struct {
 
 // InstalledServer represents a server that has been installed (Docker image pulled)
 type InstalledServer struct {
-	ID                   string            `json:"id" mapstructure:"id"`
-	Name                 string            `json:"name" mapstructure:"name"`
-	DockerImage          string            `json:"docker_image" mapstructure:"docker_image"`
-	Version              string            `json:"version" mapstructure:"version"`
-	Description          string            `json:"description" mapstructure:"description"`
-	SetupDescription     string            `json:"setup_description" mapstructure:"setup_description"`
-	SupportURL           string            `json:"support_url" mapstructure:"support_url"`
-	License              string            `json:"license" mapstructure:"license"`
-	Maintainer           string            `json:"maintainer" mapstructure:"maintainer"`
-	Tags                 []string          `json:"tags" mapstructure:"tags"`
-	Architecture         []string          `json:"architecture" mapstructure:"architecture"`
-	HealthCheck          map[string]any    `json:"health_check" mapstructure:"health_check"`
-	ResourceRequirements map[string]any    `json:"resource_requirements" mapstructure:"resource_requirements"`
-	DockerCommand        string            `json:"docker_command" mapstructure:"docker_command"`
-	EnvironmentVariables map[string]any    `json:"environment_variables" mapstructure:"environment_variables"`
-	Ports                map[string]any    `json:"ports" mapstructure:"ports"`
-	Volumes              []any             `json:"volumes" mapstructure:"volumes"`
-	InstallDate          string            `json:"install_date" mapstructure:"install_date"`
-	LastUpdated          string            `json:"last_updated" mapstructure:"last_updated"`
-	SourceRegistry       string            `json:"source_registry" mapstructure:"source_registry"`
-	IsOfficial           bool              `json:"is_official" mapstructure:"is_official"`
+	ID                   string         `json:"id" mapstructure:"id"`
+	Name                 string         `json:"name" mapstructure:"name"`
+	DockerImage          string         `json:"docker_image" mapstructure:"docker_image"`
+	Version              string         `json:"version" mapstructure:"version"`
+	Description          string         `json:"description" mapstructure:"description"`
+	SetupDescription     string         `json:"setup_description" mapstructure:"setup_description"`
+	SupportURL           string         `json:"support_url" mapstructure:"support_url"`
+	License              string         `json:"license" mapstructure:"license"`
+	Maintainer           string         `json:"maintainer" mapstructure:"maintainer"`
+	Tags                 []string       `json:"tags" mapstructure:"tags"`
+	Architecture         []string       `json:"architecture" mapstructure:"architecture"`
+	HealthCheck          map[string]any `json:"health_check" mapstructure:"health_check"`
+	ResourceRequirements map[string]any `json:"resource_requirements" mapstructure:"resource_requirements"`
+	DockerCommand        string         `json:"docker_command" mapstructure:"docker_command"`
+	EnvironmentVariables map[string]any `json:"environment_variables" mapstructure:"environment_variables"`
+	Ports                map[string]any `json:"ports" mapstructure:"ports"`
+	Volumes              []any          `json:"volumes" mapstructure:"volumes"`
+	InstallDate          string         `json:"install_date" mapstructure:"install_date"`
+	LastUpdated          string         `json:"last_updated" mapstructure:"last_updated"`
+	SourceRegistry       string         `json:"source_registry" mapstructure:"source_registry"`
+	IsOfficial           bool           `json:"is_official" mapstructure:"is_official"`
 }
 
 // ConfiguredServer represents an actual Docker container configuration
 type ConfiguredServer struct {
-	ID               string            `json:"id" mapstructure:"id"`
-	Name             string            `json:"name" mapstructure:"name"`
-	ContainerName    string            `json:"container_name" mapstructure:"container_name"`
-	ContainerID      string            `json:"container_id" mapstructure:"container_id"`
-	InstalledServerID string           `json:"installed_server_id" mapstructure:"installed_server_id"`
-	DockerImage      string            `json:"docker_image" mapstructure:"docker_image"`
-	Port             int               `json:"port" mapstructure:"port"`
-	ContainerPort    int               `json:"container_port" mapstructure:"container_port"` // MCP port from registry
-	Environment      map[string]string `json:"environment" mapstructure:"environment"`
-	Volumes          map[string]string `json:"volumes" mapstructure:"volumes"`
-	CreatedDate      string            `json:"created_date" mapstructure:"created_date"`
-	LastStarted      string            `json:"last_started" mapstructure:"last_started"`
-	AutoStart        bool              `json:"auto_start" mapstructure:"auto_start"`
+	ID                string            `json:"id" mapstructure:"id"`
+	Version           string            `json:"version" mapstructure:"version"`
+	Name              string            `json:"name" mapstructure:"name"`
+	ContainerName     string            `json:"container_name" mapstructure:"container_name"`
+	ContainerID       string            `json:"container_id" mapstructure:"container_id"`
+	InstalledServerID string            `json:"installed_server_id" mapstructure:"installed_server_id"`
+	DockerImage       string            `json:"docker_image" mapstructure:"docker_image"`
+	Port              int               `json:"port" mapstructure:"port"`
+	ContainerPort     int               `json:"container_port" mapstructure:"container_port"` // MCP port from registry
+	Environment       map[string]string `json:"environment" mapstructure:"environment"`
+	Volumes           map[string]string `json:"volumes" mapstructure:"volumes"`
+	CreatedDate       string            `json:"created_date" mapstructure:"created_date"`
+	LastStarted       string            `json:"last_started" mapstructure:"last_started"`
+	AutoStart         bool              `json:"auto_start" mapstructure:"auto_start"`
 }
 
 // ConfigManager handles configuration persistence

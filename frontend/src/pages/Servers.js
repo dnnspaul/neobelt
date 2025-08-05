@@ -104,7 +104,7 @@ export class Servers {
                                                 <button class="server-restart-btn px-3 py-1 text-xs font-medium text-yellow-700 bg-yellow-100 border border-yellow-300 rounded hover:bg-yellow-200" data-server-id="${server.id}">
                                                     Restart
                                                 </button>
-                                            ` : server.status === 'stopped' ? `
+                                            ` : (server.status === 'stopped' || server.status === 'exited' || server.status === 'dead') ? `
                                                 <button class="server-start-btn px-3 py-1 text-xs font-medium text-green-700 bg-green-100 border border-green-300 rounded hover:bg-green-200" data-server-id="${server.id}">
                                                     Start
                                                 </button>
@@ -208,15 +208,6 @@ export class Servers {
             addServerBtn.addEventListener('click', () => this.showAddServerWizard());
         }
 
-        // Direct event listeners for server details toggle buttons
-        const detailsToggleButtons = document.querySelectorAll('.server-details-toggle');
-        detailsToggleButtons.forEach(button => {
-            button.addEventListener('click', (e) => {
-                e.preventDefault();
-                const serverId = button.getAttribute('data-server-id');
-                this.toggleServerDetails(serverId);
-            });
-        });
 
         // Other server action buttons with event delegation
         const mainContent = document.getElementById('main-content');
@@ -240,6 +231,12 @@ export class Servers {
                 if (e.target.classList.contains('server-debug-btn')) {
                     const serverId = e.target.getAttribute('data-server-id');
                     this.debugServer(serverId);
+                }
+
+                if (e.target.classList.contains('server-details-toggle')) {
+                    e.preventDefault();
+                    const serverId = e.target.getAttribute('data-server-id');
+                    this.toggleServerDetails(serverId);
                 }
 
                 if (e.target.closest('.server-menu-btn')) {
@@ -567,7 +564,7 @@ export class Servers {
 
             Modal.show(content, {
                 title: `Debug ${server.name}`,
-                size: 'lg'
+                size: 'xl'
             });
         } catch (error) {
             this.showErrorModal('Debug Failed', `Failed to get server information: ${error.message || error}`);

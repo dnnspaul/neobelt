@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"log"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -14,8 +16,15 @@ import (
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/client"
+	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/docker/go-connections/nat"
 )
+
+// LogLine represents a single log line with timestamp
+type LogLine struct {
+	Timestamp time.Time
+	Content   string
+}
 
 // DockerService manages Docker containers for MCP servers
 type DockerService struct {
@@ -53,7 +62,7 @@ func NewDockerService() (*DockerService, error) {
 // GetManagedContainers returns all containers managed by neobelt
 func (ds *DockerService) GetManagedContainers(ctx context.Context) ([]ContainerInfo, error) {
 	log.Printf("[DEBUG] GetManagedContainers called")
-	
+
 	// Filter for containers with neobelt.managed-by=true label
 	filterArgs := filters.NewArgs()
 	filterArgs.Add("label", "neobelt.managed-by=true")
@@ -156,7 +165,7 @@ func (ds *DockerService) getContainerInfo(ctx context.Context, containerID strin
 		Status:      inspect.State.Status,
 		State:       ds.mapContainerState(inspect.State.Status),
 		Uptime:      uptime,
-		CPU:         "0%", // Will be populated by stats API if needed
+		CPU:         "0%",  // Will be populated by stats API if needed
 		Memory:      "0MB", // Will be populated by stats API if needed
 		Port:        port,
 		Environment: envMap,
@@ -199,24 +208,24 @@ func formatUptime(d time.Duration) string {
 // StartContainer starts a stopped container
 func (ds *DockerService) StartContainer(ctx context.Context, containerID string) error {
 	log.Printf("[DEBUG] Starting container: %s", containerID)
-	
+
 	// First check if container exists
 	inspect, err := ds.client.ContainerInspect(ctx, containerID)
 	if err != nil {
 		log.Printf("[ERROR] Container %s not found before start: %v", containerID, err)
 		return fmt.Errorf("container not found: %w", err)
 	}
-	
+
 	log.Printf("[DEBUG] Container %s exists, current state: %s", containerID, inspect.State.Status)
-	
+
 	err = ds.client.ContainerStart(ctx, containerID, container.StartOptions{})
 	if err != nil {
 		log.Printf("[ERROR] Failed to start container %s: %v", containerID, err)
 		return err
 	}
-	
+
 	log.Printf("[DEBUG] Container start command completed for %s", containerID)
-	
+
 	// Verify the container started successfully
 	inspect, err = ds.client.ContainerInspect(ctx, containerID)
 	if err != nil {
@@ -224,7 +233,7 @@ func (ds *DockerService) StartContainer(ctx context.Context, containerID string)
 	} else {
 		log.Printf("[DEBUG] Container %s post-start state: %s", containerID, inspect.State.Status)
 	}
-	
+
 	return nil
 }
 
@@ -257,6 +266,7 @@ func (ds *DockerService) GetContainerLogs(ctx context.Context, containerID strin
 		ShowStdout: true,
 		ShowStderr: true,
 		Tail:       fmt.Sprintf("%d", lines),
+		Timestamps: true,
 	}
 
 	logs, err := ds.client.ContainerLogs(ctx, containerID, options)
@@ -265,12 +275,80 @@ func (ds *DockerService) GetContainerLogs(ctx context.Context, containerID strin
 	}
 	defer logs.Close()
 
-	logBytes, err := io.ReadAll(logs)
+	// Use stdcopy to properly parse Docker log stream and remove header bytes
+	var stdout, stderr bytes.Buffer
+	_, err = stdcopy.StdCopy(&stdout, &stderr, logs)
 	if err != nil {
-		return "", fmt.Errorf("failed to read logs: %w", err)
+		return "", fmt.Errorf("failed to parse logs: %w", err)
 	}
 
-	return string(logBytes), nil
+	// Parse log lines with timestamps from both streams
+	var allLogLines []LogLine
+
+	// Parse stdout lines
+	stdoutLines := strings.Split(strings.TrimSpace(stdout.String()), "\n")
+	for _, line := range stdoutLines {
+		if line != "" {
+			if logLine := parseLogLine(line); logLine != nil {
+				allLogLines = append(allLogLines, *logLine)
+			}
+		}
+	}
+
+	// Parse stderr lines
+	stderrLines := strings.Split(strings.TrimSpace(stderr.String()), "\n")
+	for _, line := range stderrLines {
+		if line != "" {
+			if logLine := parseLogLine(line); logLine != nil {
+				allLogLines = append(allLogLines, *logLine)
+			}
+		}
+	}
+
+	// Sort by timestamp
+	sort.Slice(allLogLines, func(i, j int) bool {
+		return allLogLines[i].Timestamp.Before(allLogLines[j].Timestamp)
+	})
+
+	// Combine sorted lines
+	var result strings.Builder
+	for i, logLine := range allLogLines {
+		if i > 0 {
+			result.WriteString("\n")
+		}
+		result.WriteString(fmt.Sprintf("[%s] ", logLine.Timestamp.Format(time.RFC3339)))
+		result.WriteString(logLine.Content)
+	}
+
+	return result.String(), nil
+}
+
+// parseLogLine parses a Docker log line with timestamp format: "2025-08-04T10:51:11.710356759Z message"
+func parseLogLine(line string) *LogLine {
+	if len(line) < 30 { // Minimum length for timestamp + space + content
+		return &LogLine{Timestamp: time.Time{}, Content: line}
+	}
+
+	// Find the space after the timestamp
+	spaceIndex := strings.Index(line, " ")
+	if spaceIndex == -1 || spaceIndex < 20 { // RFC3339Nano is at least 20 chars
+		return &LogLine{Timestamp: time.Time{}, Content: line}
+	}
+
+	timestampStr := line[:spaceIndex]
+	content := line[spaceIndex+1:]
+
+	// Parse the timestamp
+	timestamp, err := time.Parse(time.RFC3339Nano, timestampStr)
+	if err != nil {
+		// If parsing fails, use zero time and return original line
+		return &LogLine{Timestamp: time.Time{}, Content: line}
+	}
+
+	return &LogLine{
+		Timestamp: timestamp,
+		Content:   content,
+	}
 }
 
 // PullImage pulls a Docker image
@@ -293,7 +371,7 @@ func (ds *DockerService) PullImage(ctx context.Context, imageName string) error 
 // CreateContainer creates a new container with neobelt labels
 func (ds *DockerService) CreateContainer(ctx context.Context, config ContainerCreateConfig) (string, error) {
 	log.Printf("[DEBUG] CreateContainer called with config: %+v", config)
-	
+
 	// Add neobelt management labels
 	if config.Labels == nil {
 		config.Labels = make(map[string]string)
@@ -342,13 +420,13 @@ func (ds *DockerService) CreateContainer(ctx context.Context, config ContainerCr
 		AutoRemove:  false,
 		NetworkMode: "bridge",
 	}
-	
+
 	// Set memory limit if specified
 	if config.MemoryLimitMB > 0 {
 		hostConfig.Memory = int64(config.MemoryLimitMB) * 1024 * 1024 // Convert MB to bytes
 		log.Printf("[DEBUG] Memory limit set to: %d MB (%d bytes)", config.MemoryLimitMB, hostConfig.Memory)
 	}
-	
+
 	// Set restart policy if specified
 	if config.RestartPolicy != "" {
 		hostConfig.RestartPolicy = container.RestartPolicy{
@@ -364,9 +442,9 @@ func (ds *DockerService) CreateContainer(ctx context.Context, config ContainerCr
 		if containerPortNum == 0 {
 			containerPortNum = config.Port // Fallback for backward compatibility
 		}
-		
+
 		containerPort, _ := nat.NewPort("tcp", strconv.Itoa(containerPortNum))
-		
+
 		hostConfig.PortBindings = nat.PortMap{
 			containerPort: []nat.PortBinding{
 				{HostIP: "0.0.0.0", HostPort: strconv.Itoa(config.Port)},
@@ -386,7 +464,7 @@ func (ds *DockerService) CreateContainer(ctx context.Context, config ContainerCr
 	}
 
 	log.Printf("[DEBUG] Container created successfully with ID: %s", resp.ID)
-	
+
 	// Immediately verify the container was created and has correct labels
 	inspect, err := ds.client.ContainerInspect(ctx, resp.ID)
 	if err != nil {
@@ -420,12 +498,12 @@ func (ds *DockerService) ListImages(ctx context.Context) ([]image.Summary, error
 type ContainerCreateConfig struct {
 	Name          string            `json:"name"`
 	Image         string            `json:"image"`
-	Port          int               `json:"port"`          // Host port (external)
+	Port          int               `json:"port"`           // Host port (external)
 	ContainerPort int               `json:"container_port"` // Container port (internal, from MCP registry)
 	Environment   map[string]string `json:"environment"`
 	Volumes       map[string]string `json:"volumes"` // host_path -> container_path
 	Labels        map[string]string `json:"labels"`
-	DockerCommand string            `json:"docker_command"` // Command arguments from registry
+	DockerCommand string            `json:"docker_command"`  // Command arguments from registry
 	MemoryLimitMB int               `json:"memory_limit_mb"` // Memory limit in MB
 	RestartPolicy string            `json:"restart_policy"`  // Docker restart policy (no, always, on-failure, unless-stopped)
 }
@@ -454,9 +532,9 @@ func parseDockerCommand(dockerCommand string) []string {
 	if dockerCommand == "" {
 		return nil
 	}
-	
+
 	log.Printf("[DEBUG] Using docker command as CMD: %s", dockerCommand)
-	
+
 	// Simple argument parsing - split by spaces, respecting quoted strings
 	return parseCommandArgs(dockerCommand)
 }
@@ -467,10 +545,10 @@ func parseCommandArgs(cmd string) []string {
 	var current strings.Builder
 	inQuotes := false
 	quoteChar := byte(0)
-	
+
 	for i := 0; i < len(cmd); i++ {
 		c := cmd[i]
-		
+
 		if !inQuotes && (c == '"' || c == '\'') {
 			inQuotes = true
 			quoteChar = c
@@ -486,10 +564,10 @@ func parseCommandArgs(cmd string) []string {
 			current.WriteByte(c)
 		}
 	}
-	
+
 	if current.Len() > 0 {
 		args = append(args, current.String())
 	}
-	
+
 	return args
 }

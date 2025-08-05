@@ -57,22 +57,22 @@ func (a *App) Greet(name string) string {
 
 // Registry server definition structure
 type RegistryServer struct {
-	Name                 string                 `json:"name"`
-	Description          string                 `json:"description"`
-	SetupDescription     string                 `json:"setup_description"`
-	SupportURL           string                 `json:"support_url"`
-	DockerImage          string                 `json:"docker_image"`
-	Version              string                 `json:"version"`
-	License              string                 `json:"license"`
-	Maintainer           string                 `json:"maintainer"`
-	Tags                 []string               `json:"tags"`
-	Architecture         []string          `json:"architecture"`
-	HealthCheck          map[string]any    `json:"health_check"`
-	ResourceRequirements map[string]any    `json:"resource_requirements"`
-	DockerCommand        string            `json:"docker_command"`
-	EnvironmentVariables map[string]any    `json:"environment_variables"`
-	Ports                map[string]any    `json:"ports"`
-	Volumes              []any             `json:"volumes"`
+	Name                 string         `json:"name"`
+	Description          string         `json:"description"`
+	SetupDescription     string         `json:"setup_description"`
+	SupportURL           string         `json:"support_url"`
+	DockerImage          string         `json:"docker_image"`
+	Version              string         `json:"version"`
+	License              string         `json:"license"`
+	Maintainer           string         `json:"maintainer"`
+	Tags                 []string       `json:"tags"`
+	Architecture         []string       `json:"architecture"`
+	HealthCheck          map[string]any `json:"health_check"`
+	ResourceRequirements map[string]any `json:"resource_requirements"`
+	DockerCommand        string         `json:"docker_command"`
+	EnvironmentVariables map[string]any `json:"environment_variables"`
+	Ports                map[string]any `json:"ports"`
+	Volumes              []any          `json:"volumes"`
 	// Added fields to track source registry
 	SourceRegistryName string `json:"source_registry_name"`
 	SourceRegistryURL  string `json:"source_registry_url"`
@@ -172,9 +172,9 @@ func (a *App) GetRegistries() []Registry {
 		Description: "Handpicked MCP servers by the Neobelt team",
 		AuthType:    "none",
 	}
-	
+
 	registries := []Registry{officialRegistry}
-	
+
 	if a.configManager != nil {
 		// Add custom registries from config
 		customRegistries := a.configManager.GetRegistries()
@@ -331,7 +331,7 @@ func (a *App) UpdateServerDefaults(serverDefaults ServerDefaultsConfig) error {
 	portChanged := oldDefaultPort != serverDefaults.DefaultPort
 
 	config.ServerDefaults = serverDefaults
-	
+
 	// Save configuration first
 	if err := a.configManager.Save(); err != nil {
 		return err
@@ -475,7 +475,7 @@ func (a *App) updateContainerPort(containerID string, oldPort, newPort int) erro
 	newConfig := ContainerCreateConfig{
 		Name:          containerInfo.Name,
 		Image:         containerInfo.Image,
-		Port:          newPort, // Use the new port
+		Port:          newPort,                        // Use the new port
 		ContainerPort: configuredServer.ContainerPort, // Use stored container port
 		Environment:   configuredServer.Environment,
 		Volumes:       convertVolumesToMap(containerInfo.Volumes),
@@ -509,7 +509,7 @@ func (a *App) updateContainerPort(containerID string, oldPort, newPort int) erro
 		return fmt.Errorf("failed to start new container: %w", err)
 	}
 
-	fmt.Printf("Successfully recreated container with new port: %s -> %s (port %d -> %d)\n", 
+	fmt.Printf("Successfully recreated container with new port: %s -> %s (port %d -> %d)\n",
 		containerID, newContainerID, oldPort, newPort)
 	return nil
 }
@@ -532,7 +532,7 @@ func (a *App) applySettingsToExistingContainers(serverDefaults ServerDefaultsCon
 
 		// Try to update container settings
 		if err := a.updateContainerSettings(server.ContainerID, serverDefaults); err != nil {
-			fmt.Printf("Warning: Failed to update settings for container %s (%s): %v\n", 
+			fmt.Printf("Warning: Failed to update settings for container %s (%s): %v\n",
 				server.ContainerID, server.Name, err)
 			// Continue with other containers
 		} else {
@@ -605,7 +605,7 @@ func (a *App) updateContainerSettings(containerID string, serverDefaults ServerD
 	newConfig := ContainerCreateConfig{
 		Name:          containerInfo.Name,
 		Image:         containerInfo.Image,
-		Port:          configuredServer.Port, // Use the potentially updated port
+		Port:          configuredServer.Port,          // Use the potentially updated port
 		ContainerPort: configuredServer.ContainerPort, // Use stored container port
 		Environment:   configuredServer.Environment,
 		Volumes:       convertVolumesToMap(containerInfo.Volumes),
@@ -620,7 +620,7 @@ func (a *App) updateContainerSettings(containerID string, serverDefaults ServerD
 		}(),
 	}
 
-	fmt.Printf("Creating new container with updated settings: Memory=%dMB, RestartPolicy=%s, HostPort=%d, ContainerPort=%d\n", 
+	fmt.Printf("Creating new container with updated settings: Memory=%dMB, RestartPolicy=%s, HostPort=%d, ContainerPort=%d\n",
 		newConfig.MemoryLimitMB, newConfig.RestartPolicy, newConfig.Port, newConfig.ContainerPort)
 
 	newContainerID, err := a.dockerService.CreateContainer(a.ctx, newConfig)
@@ -661,7 +661,7 @@ func convertVolumesToMap(volumes []string) map[string]string {
 // GetManagedContainers returns all Docker containers managed by neobelt
 func (a *App) GetManagedContainers() ([]ContainerInfo, error) {
 	fmt.Printf("[DEBUG] App.GetManagedContainers called\n")
-	
+
 	if a.dockerService == nil {
 		fmt.Printf("[ERROR] Docker service not available\n")
 		return nil, fmt.Errorf("Docker service not available")
@@ -672,7 +672,7 @@ func (a *App) GetManagedContainers() ([]ContainerInfo, error) {
 		fmt.Printf("[ERROR] Docker service GetManagedContainers failed: %v\n", err)
 		return nil, err
 	}
-	
+
 	fmt.Printf("[DEBUG] App.GetManagedContainers returning %d containers\n", len(containers))
 	return containers, nil
 }
@@ -680,7 +680,7 @@ func (a *App) GetManagedContainers() ([]ContainerInfo, error) {
 // StartContainer starts a Docker container
 func (a *App) StartContainer(containerID string) error {
 	fmt.Printf("[DEBUG] App.StartContainer called for container: %s\n", containerID)
-	
+
 	if a.dockerService == nil {
 		fmt.Printf("[ERROR] Docker service not available\n")
 		return fmt.Errorf("Docker service not available")
@@ -691,7 +691,7 @@ func (a *App) StartContainer(containerID string) error {
 		fmt.Printf("[ERROR] Docker service StartContainer failed for %s: %v\n", containerID, err)
 		return err
 	}
-	
+
 	fmt.Printf("[DEBUG] App.StartContainer completed successfully for: %s\n", containerID)
 	return nil
 }
@@ -740,9 +740,9 @@ func (a *App) RemoveContainer(containerID string, force bool) error {
 		configuredServers := a.configManager.GetConfiguredServers()
 		for _, server := range configuredServers {
 			// Handle both short and full container IDs (similar to frontend logic)
-			if server.ContainerID == containerID || 
-			   (len(server.ContainerID) > len(containerID) && strings.HasPrefix(server.ContainerID, containerID)) ||
-			   (len(containerID) > len(server.ContainerID) && strings.HasPrefix(containerID, server.ContainerID)) {
+			if server.ContainerID == containerID ||
+				(len(server.ContainerID) > len(containerID) && strings.HasPrefix(server.ContainerID, containerID)) ||
+				(len(containerID) > len(server.ContainerID) && strings.HasPrefix(containerID, server.ContainerID)) {
 				if removeErr := a.configManager.RemoveConfiguredServer(server.ID); removeErr != nil {
 					// Log the error but don't fail the operation
 					fmt.Printf("Warning: Failed to remove configured server entry for container %s: %v\n", containerID, removeErr)
@@ -772,10 +772,10 @@ func (a *App) GetInstalledServersWithVersionCheck() ([]map[string]any, error) {
 		// If we can't fetch registry data, just return installed servers without version info
 		for _, server := range installedServers {
 			serverInfo := map[string]any{
-				"installed_server":  server,
-				"update_available":  false,
-				"latest_version":    "",
-				"registry_error":    err.Error(),
+				"installed_server": server,
+				"update_available": false,
+				"latest_version":   "",
+				"registry_error":   err.Error(),
 			}
 			result = append(result, serverInfo)
 		}
@@ -800,7 +800,7 @@ func (a *App) GetInstalledServersWithVersionCheck() ([]map[string]any, error) {
 		if regServer, exists := registryMap[installed.DockerImage]; exists {
 			serverInfo["registry_server"] = regServer
 			serverInfo["latest_version"] = regServer.Version
-			
+
 			// Simple version comparison - in reality you'd want semantic versioning
 			if regServer.Version != installed.Version {
 				serverInfo["update_available"] = true
@@ -825,7 +825,7 @@ func (a *App) PullImage(imageName string) error {
 // CreateContainer creates a new Docker container with neobelt labels
 func (a *App) CreateContainer(config ContainerCreateConfig) (string, error) {
 	fmt.Printf("[DEBUG] App.CreateContainer called with config: %+v\n", config)
-	
+
 	if a.dockerService == nil {
 		fmt.Printf("[ERROR] Docker service not available\n")
 		return "", fmt.Errorf("Docker service not available")
@@ -836,7 +836,7 @@ func (a *App) CreateContainer(config ContainerCreateConfig) (string, error) {
 		fmt.Printf("[ERROR] Docker service CreateContainer failed: %v\n", err)
 		return "", err
 	}
-	
+
 	fmt.Printf("[DEBUG] App.CreateContainer completed successfully, returning ID: %s\n", containerId)
 	return containerId, nil
 }
@@ -903,7 +903,7 @@ func getMCPPortFromRegistry(server *RegistryServer) int {
 	if server.Ports == nil {
 		return 0
 	}
-	
+
 	// Try to get the "mcp" port from the ports map
 	if mcpPort, exists := server.Ports["mcp"]; exists {
 		switch v := mcpPort.(type) {
@@ -917,7 +917,7 @@ func getMCPPortFromRegistry(server *RegistryServer) int {
 			}
 		}
 	}
-	
+
 	return 0
 }
 
@@ -926,7 +926,7 @@ func getMCPPortFromInstalledServer(server *InstalledServer) int {
 	if server.Ports == nil {
 		return 0
 	}
-	
+
 	// Try to get the "mcp" port from the ports map
 	if mcpPort, exists := server.Ports["mcp"]; exists {
 		switch v := mcpPort.(type) {
@@ -940,7 +940,7 @@ func getMCPPortFromInstalledServer(server *InstalledServer) int {
 			}
 		}
 	}
-	
+
 	return 0
 }
 
@@ -961,6 +961,7 @@ func (a *App) CreateConfiguredServer(installedServerID, containerName, container
 
 	configuredServer := ConfiguredServer{
 		ID:                fmt.Sprintf("configured-%d", time.Now().Unix()),
+		Version:           installedServer.Version,
 		Name:              installedServer.Name,
 		ContainerName:     containerName,
 		ContainerID:       containerID,
