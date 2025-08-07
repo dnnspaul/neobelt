@@ -22,12 +22,6 @@ export class Settings {
                 maxMemory: 512,
                 restartOnFailure: true
             },
-            security: {
-                requireConfirmation: true,
-                allowRemoteServers: false,
-                verifySignatures: true,
-                sandboxServers: true
-            },
             advanced: {
                 debugMode: false,
                 logRetention: 30,
@@ -120,15 +114,6 @@ export class Settings {
                                 </div>
                             </a>
                             
-                            <a href="#" class="settings-nav-link block px-3 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-md" data-section="security">
-                                <div class="flex items-center">
-                                    <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
-                                    </svg>
-                                    Security
-                                </div>
-                            </a>
-                            
                             <a href="#" class="settings-nav-link block px-3 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-md" data-section="advanced">
                                 <div class="flex items-center">
                                     <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -160,17 +145,6 @@ export class Settings {
                                             </div>
                                             <label class="relative inline-flex items-center cursor-pointer">
                                                 <input type="checkbox" class="sr-only peer" ${this.settings.general.autoStart ? 'checked' : ''}>
-                                                <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
-                                            </label>
-                                        </div>
-
-                                        <div class="flex items-center justify-between">
-                                            <div>
-                                                <label class="text-sm font-medium text-gray-700">Minimize to system tray</label>
-                                                <p class="text-sm text-gray-500">Keep Neobelt running in the background</p>
-                                            </div>
-                                            <label class="relative inline-flex items-center cursor-pointer">
-                                                <input type="checkbox" class="sr-only peer" ${this.settings.general.minimizeToTray ? 'checked' : ''}>
                                                 <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
                                             </label>
                                         </div>
@@ -365,71 +339,6 @@ export class Settings {
                                     </div>
                                 </div>
 
-                            </div>
-                        </div>
-
-                        <!-- Security Settings -->
-                        <div id="security-settings" class="settings-section hidden">
-                            <div class="space-y-6">
-                                <div>
-                                    <h2 class="text-lg font-semibold text-gray-900 mb-4">Security Settings</h2>
-                                </div>
-
-                                <!-- Installation Security -->
-                                <div class="bg-white border border-gray-200 rounded-lg p-6">
-                                    <h3 class="text-md font-medium text-gray-900 mb-4">Installation Security</h3>
-                                    <div class="space-y-4">
-                                        <div class="flex items-center justify-between">
-                                            <div>
-                                                <label class="text-sm font-medium text-gray-700">Require confirmation for installations</label>
-                                                <p class="text-sm text-gray-500">Show confirmation dialog before installing servers</p>
-                                            </div>
-                                            <label class="relative inline-flex items-center cursor-pointer">
-                                                <input type="checkbox" class="sr-only peer" ${this.settings.security.requireConfirmation ? 'checked' : ''}>
-                                                <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
-                                            </label>
-                                        </div>
-
-                                        <div class="flex items-center justify-between">
-                                            <div>
-                                                <label class="text-sm font-medium text-gray-700">Verify package signatures</label>
-                                                <p class="text-sm text-gray-500">Check cryptographic signatures of server packages</p>
-                                            </div>
-                                            <label class="relative inline-flex items-center cursor-pointer">
-                                                <input type="checkbox" class="sr-only peer" ${this.settings.security.verifySignatures ? 'checked' : ''}>
-                                                <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
-                                            </label>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <!-- Runtime Security -->
-                                <div class="bg-white border border-gray-200 rounded-lg p-6">
-                                    <h3 class="text-md font-medium text-gray-900 mb-4">Runtime Security</h3>
-                                    <div class="space-y-4">
-                                        <div class="flex items-center justify-between">
-                                            <div>
-                                                <label class="text-sm font-medium text-gray-700">Allow remote servers</label>
-                                                <p class="text-sm text-gray-500">Allow servers to listen on non-localhost addresses</p>
-                                            </div>
-                                            <label class="relative inline-flex items-center cursor-pointer">
-                                                <input type="checkbox" class="sr-only peer" ${this.settings.security.allowRemoteServers ? 'checked' : ''}>
-                                                <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
-                                            </label>
-                                        </div>
-
-                                        <div class="flex items-center justify-between">
-                                            <div>
-                                                <label class="text-sm font-medium text-gray-700">Sandbox servers</label>
-                                                <p class="text-sm text-gray-500">Run servers in isolated environments</p>
-                                            </div>
-                                            <label class="relative inline-flex items-center cursor-pointer">
-                                                <input type="checkbox" class="sr-only peer" ${this.settings.security.sandboxServers ? 'checked' : ''}>
-                                                <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
-                                            </label>
-                                        </div>
-                                    </div>
-                                </div>
                             </div>
                         </div>
 

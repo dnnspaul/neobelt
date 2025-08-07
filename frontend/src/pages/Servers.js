@@ -530,7 +530,7 @@ export class Servers {
         }
 
         try {
-            const logs = await window.go.main.App.GetContainerLogs(serverId, 50);
+            const logs = await window.go.main.App.GetContainerLogs(serverId, 500);
             
             const content = `
                 <div class="space-y-4">
@@ -556,7 +556,7 @@ export class Servers {
                         </dl>
                     </div>
                     <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                        <h4 class="font-medium text-gray-900 mb-2">Recent Logs (last 50 lines)</h4>
+                        <h4 class="font-medium text-gray-900 mb-2">Recent Logs (last 500 lines)</h4>
                         <div class="max-h-64 overflow-y-auto">
                             <pre class="text-xs text-gray-700 whitespace-pre-wrap font-mono">${logs || 'No logs available'}</pre>
                         </div>
@@ -568,7 +568,7 @@ export class Servers {
                     </div>
                 </div>
             `;
-            Modal.show(content, { title: 'Server Logs', size: 'lg' });
+            Modal.show(content, { title: 'Server Logs', size: 'xl' });
         } catch (error) {
             this.showErrorModal('Error', `Failed to get logs: ${error.message || error}`);
         }
