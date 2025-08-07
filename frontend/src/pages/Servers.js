@@ -10,6 +10,7 @@ import {
 import { 
     loadServers, 
     refreshServers, 
+    refreshServersWithoutLoading,
     startServer, 
     stopServer, 
     restartServer, 
@@ -20,7 +21,9 @@ import {
     refreshResourceUsage,
     updateServerResourceDisplay,
     startResourceUsageRefresh,
-    stopResourceUsageRefresh
+    stopResourceUsageRefresh,
+    setButtonLoading,
+    resetButtonLoading
 } from './servers-logic.js';
 import { 
     renderMainTemplate, 
@@ -36,6 +39,7 @@ export class Servers {
         this.servers = [];
         this.loading = false;
         this.resourceRefreshInterval = null;
+        this.refreshing = false; // Guard to prevent overlapping refresh calls
     }
 
     render() {
@@ -45,6 +49,7 @@ export class Servers {
     // Import core functionality
     loadServers = loadServers.bind(this);
     refreshServers = refreshServers.bind(this);
+    refreshServersWithoutLoading = refreshServersWithoutLoading.bind(this);
     startServer = startServer.bind(this);
     stopServer = stopServer.bind(this);
     restartServer = restartServer.bind(this);
@@ -55,6 +60,8 @@ export class Servers {
     updateServerResourceDisplay = updateServerResourceDisplay.bind(this);
     startResourceUsageRefresh = startResourceUsageRefresh.bind(this);
     stopResourceUsageRefresh = stopResourceUsageRefresh.bind(this);
+    setButtonLoading = setButtonLoading.bind(this);
+    resetButtonLoading = resetButtonLoading.bind(this);
 
     // Helper functions
     renderMarkdown = renderMarkdown;
@@ -221,7 +228,7 @@ export class Servers {
             
             // Create a container config object from the configured server data
             const containerConfig = {
-                name: configuredServer.id,
+                name: server.name || configuredServer.name || configuredServer.id, // Use actual container name from running server
                 port: configuredServer.port,
                 container_port: configuredServer.container_port || 0,
                 environment: configuredServer.environment || {},

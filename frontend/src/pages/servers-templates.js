@@ -64,7 +64,7 @@ export function renderMainTemplate(servers, loading) {
             <!-- Servers List -->
             <div class="flex-1 overflow-y-auto p-6">
                 <div class="grid grid-cols-1 gap-6">
-                    ${loading ? renderLoadingState() : ''}
+                    ${servers.length === 0 && loading ? renderLoadingState() : ''}
                     ${servers.length === 0 && !loading ? renderEmptyState() : ''}
                     ${servers.map(server => renderServerCard(server)).join('')}
                 </div>
@@ -79,26 +79,26 @@ export function renderServerCard(server) {
             <div class="p-6">
                 <div class="flex items-start justify-between">
                     <div class="flex items-start space-x-4">
-                        <div class="w-12 h-12 ${getStatusBgColor(server.status)} rounded-lg flex items-center justify-center">
-                            <svg class="w-6 h-6 ${getStatusTextColor(server.status)}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <div class="w-12 h-12 ${getStatusBgColor(server.status)} rounded-lg flex items-center justify-center" data-element="server-icon">
+                            <svg class="w-6 h-6 ${getStatusTextColor(server.status)}" fill="none" stroke="currentColor" viewBox="0 0 24 24" data-element="server-icon-svg">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2"></path>
                             </svg>
                         </div>
                         <div class="flex-1">
                             <div class="flex items-center space-x-2">
-                                <h3 class="text-lg font-semibold text-gray-900">${server.display_name || server.name}</h3>
-                                <span class="px-2 py-1 text-xs font-medium ${getStatusBadgeColor(server.status)} rounded-full">${server.status.toUpperCase()}</span>
+                                <h3 class="text-lg font-semibold text-gray-900" data-element="server-name">${server.display_name || server.name}</h3>
+                                <span class="px-2 py-1 text-xs font-medium ${getStatusBadgeColor(server.status)} rounded-full" data-element="status-badge">${server.status.toUpperCase()}</span>
                             </div>
-                            <div class="flex items-center space-x-4 mt-2 text-sm text-gray-500">
-                                <span>Version: ${server.version}</span>
-                                <span>Port: ${server.port}</span>
-                                <span>Uptime: ${server.uptime}</span>
+                            <div class="flex items-center space-x-4 mt-2 text-sm text-gray-500" data-element="server-info">
+                                <span data-element="version-info">Version: ${server.version}</span>
+                                <span data-element="port-info">Port: ${server.port}</span>
+                                <span data-element="uptime-info">Uptime: ${server.uptime}</span>
                             </div>
                         </div>
                     </div>
                     
-                    <div class="flex items-center space-x-2">
-                        ${renderServerActionButtons(server)}
+                    <div class="flex items-center space-x-2" data-element="action-buttons-container">
+                        <div data-element="action-buttons">${renderServerActionButtons(server)}</div>
                         
                         <div class="relative">
                             <button class="server-menu-btn p-1 text-gray-400 hover:text-gray-600" data-server-id="${server.id}">
@@ -115,15 +115,15 @@ export function renderServerCard(server) {
                     <div class="grid grid-cols-3 gap-4 text-sm">
                         <div class="flex items-center space-x-2">
                             <div class="w-2 h-2 bg-primary-600 rounded-full"></div>
-                            <span class="text-gray-600">CPU: <span class="font-medium text-gray-900 cpu-usage">${server.cpu}</span></span>
+                            <span class="text-gray-600">CPU: <span class="font-medium text-gray-900" data-element="cpu-usage">${server.cpu}</span></span>
                         </div>
                         <div class="flex items-center space-x-2">
                             <div class="w-2 h-2 bg-green-500 rounded-full"></div>
-                            <span class="text-gray-600">Memory: <span class="font-medium text-gray-900 memory-usage">${server.memory}</span></span>
+                            <span class="text-gray-600">Memory: <span class="font-medium text-gray-900" data-element="memory-usage">${server.memory}</span></span>
                         </div>
                         <div class="flex items-center space-x-2">
-                            <div class="w-2 h-2 status-dot ${server.status === 'running' ? 'bg-green-500' : 'bg-gray-400'} rounded-full"></div>
-                            <span class="text-gray-600">Status: <span class="font-medium text-gray-900 status-text">${server.status}</span></span>
+                            <div class="w-2 h-2 ${server.status === 'running' ? 'bg-green-500' : 'bg-gray-400'} rounded-full" data-element="status-dot"></div>
+                            <span class="text-gray-600">Status: <span class="font-medium text-gray-900" data-element="status-text">${server.status}</span></span>
                         </div>
                     </div>
                 </div>
