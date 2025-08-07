@@ -184,8 +184,335 @@ export class Servers {
     }
 
     async showServerConfiguration(serverId) {
-        // Implementation for server configuration
-        console.log('Configure server:', serverId);
+        const server = this.servers.find(s => s.id === serverId);
+        if (!server) {
+            this.showErrorModal('Server Not Found', 'Could not find server information.');
+            return;
+        }
+
+        try {
+            // Get configured servers to find the configuration for this container
+            const configuredServers = await window.go.main.App.GetConfiguredServers();
+            console.log('Configured servers:', configuredServers);
+            
+            // Find the configured server that matches this container
+            const configuredServer = configuredServers.find(cs => 
+                cs.container_id === serverId || 
+                cs.container_id.startsWith(serverId) || 
+                serverId.startsWith(cs.container_id)
+            );
+            
+            if (!configuredServer) {
+                this.showErrorModal('Configuration Not Found', 'Could not find configuration for this server. It may not be a managed container.');
+                return;
+            }
+            
+            console.log('Current configured server:', configuredServer);
+            
+            // Get the installed server metadata to have the registry information
+            const installedServers = await window.go.main.App.GetInstalledServers();
+            const installedServer = installedServers.find(is => is.id === configuredServer.server_id);
+            console.log('Installed server metadata:', installedServer);
+            
+            // If installed server is not found, we can still proceed with stored configuration data
+            if (!installedServer) {
+                console.warn('Installed server not found, using stored configuration data only');
+            }
+            
+            // Create a container config object from the configured server data
+            const containerConfig = {
+                name: configuredServer.id,
+                port: configuredServer.port,
+                container_port: configuredServer.container_port || 0,
+                environment: configuredServer.environment || {},
+                volumes: configuredServer.volumes || {},
+                docker_command: configuredServer.docker_command || '',
+                docker_image: configuredServer.docker_image || (installedServer?.docker_image), // Use stored image as primary source
+                server_id: configuredServer.server_id
+            };
+            
+            // Show the configuration form with current values
+            this.showServerConfigurationForm(server, installedServer, containerConfig, true);
+        } catch (error) {
+            console.error('Failed to load server configuration:', error);
+            this.showErrorModal('Load Configuration Failed', `Failed to load server configuration: ${error.message || error}`);
+        }
+    }
+
+    // Reusable method to extract environment variables configuration from server metadata
+    extractEnvironmentVariablesConfig(server, currentEnvironment = {}) {
+        let envVarsConfig = [];
+        if (server.environment_variables) {
+            // Handle required variables
+            if (server.environment_variables.required && Array.isArray(server.environment_variables.required)) {
+                server.environment_variables.required.forEach(envVar => {
+                    envVarsConfig.push({
+                        name: envVar.name,
+                        value: currentEnvironment[envVar.name] || envVar.value || '',
+                        description: envVar.description || '',
+                        required: true,
+                        type: 'required'
+                    });
+                });
+            }
+            
+            // Handle default variables
+            if (server.environment_variables.default && Array.isArray(server.environment_variables.default)) {
+                server.environment_variables.default.forEach(envVar => {
+                    envVarsConfig.push({
+                        name: envVar.name,
+                        value: currentEnvironment[envVar.name] || envVar.value || '',
+                        description: envVar.description || '',
+                        required: false,
+                        type: 'default'
+                    });
+                });
+            }
+            
+            // Handle optional variables
+            if (server.environment_variables.optional && Array.isArray(server.environment_variables.optional)) {
+                server.environment_variables.optional.forEach(envVar => {
+                    envVarsConfig.push({
+                        name: envVar.name,
+                        value: currentEnvironment[envVar.name] || envVar.value || '',
+                        description: envVar.description || '',
+                        required: false,
+                        type: 'optional'
+                    });
+                });
+            }
+        }
+
+        // Add any existing environment variables that aren't in the registry metadata
+        for (const [name, value] of Object.entries(currentEnvironment)) {
+            if (!envVarsConfig.find(ev => ev.name === name)) {
+                envVarsConfig.push({
+                    name: name,
+                    value: value,
+                    description: '',
+                    required: false,
+                    type: 'custom'
+                });
+            }
+        }
+
+        return envVarsConfig;
+    }
+
+    // Reusable method to extract volumes configuration
+    extractVolumesConfig(server, currentVolumes = {}) {
+        let volumesText = '';
+        
+        // Start with current volumes
+        if (Object.keys(currentVolumes).length > 0) {
+            volumesText = Object.entries(currentVolumes)
+                .map(([hostPath, containerPath]) => `${hostPath}:${containerPath}`)
+                .join('\n');
+        } else if (server.volumes && Array.isArray(server.volumes) && server.volumes.length > 0) {
+            // Fall back to registry metadata if no current volumes
+            volumesText = server.volumes.map(volume => {
+                if (typeof volume === 'string') {
+                    return volume;
+                } else if (volume.host_path && volume.container_path) {
+                    return `${volume.host_path}:${volume.container_path}`;
+                }
+                return '';
+            }).filter(v => v).join('\n');
+        }
+
+        return volumesText;
+    }
+
+    // Reusable configuration form
+    showServerConfigurationForm(runningServer, installedServer, containerConfig = null, isReconfiguration = false) {
+        const server = installedServer || runningServer;
+        const currentEnvironment = containerConfig?.environment || {};
+        const currentVolumes = containerConfig?.volumes || {};
+        const currentContainerName = containerConfig?.name || '';
+        
+        // For display purposes, use stored docker image if available
+        const displayDockerImage = containerConfig?.docker_image || server?.docker_image || 'Unknown';
+        
+        const memoryRequirement = server?.resource_requirements?.memory || '';
+        
+        // Pre-populate environment variables
+        const envVarsConfig = this.extractEnvironmentVariablesConfig(server, currentEnvironment);
+        
+        // Pre-populate volumes
+        const volumesText = this.extractVolumesConfig(server, currentVolumes);
+
+        // Generate a default container name if needed
+        const defaultContainerName = isReconfiguration 
+            ? currentContainerName 
+            : `${server.name.toLowerCase().replace(/\s+/g, '-')}-${Date.now()}`;
+
+        const content = `
+            <div class="space-y-6">
+                <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                    <h4 class="font-medium text-gray-900 mb-2">Server Details</h4>
+                    <dl class="grid grid-cols-2 gap-2 text-sm">
+                        <div>
+                            <dt class="text-gray-600">Name:</dt>
+                            <dd class="text-gray-900">${server?.name || 'Unknown'}</dd>
+                        </div>
+                        <div>
+                            <dt class="text-gray-600">Image:</dt>
+                            <dd class="text-gray-900 font-mono text-xs">${displayDockerImage}</dd>
+                        </div>
+                        ${server?.version ? `
+                            <div>
+                                <dt class="text-gray-600">Version:</dt>
+                                <dd class="text-gray-900">${server.version}</dd>
+                            </div>
+                        ` : ''}
+                        ${memoryRequirement ? `
+                            <div>
+                                <dt class="text-gray-600">Memory:</dt>
+                                <dd class="text-gray-900">${memoryRequirement}</dd>
+                            </div>
+                        ` : ''}
+                        ${(containerConfig?.docker_command || server?.docker_command) ? `
+                            <div class="col-span-2">
+                                <dt class="text-gray-600">Docker Command:</dt>
+                                <dd class="text-gray-900 font-mono text-xs bg-gray-100 p-2 rounded mt-1">${containerConfig?.docker_command || server?.docker_command}</dd>
+                            </div>
+                        ` : ''}
+                        ${isReconfiguration ? `
+                            <div>
+                                <dt class="text-gray-600">Current Port:</dt>
+                                <dd class="text-gray-900">${containerConfig?.port || 'N/A'}</dd>
+                            </div>
+                            <div>
+                                <dt class="text-gray-600">Status:</dt>
+                                <dd class="text-gray-900">${runningServer.status}</dd>
+                            </div>
+                        ` : ''}
+                    </dl>
+                </div>
+                
+                ${server.setup_description && !isReconfiguration ? `
+                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                        <h4 class="font-medium text-gray-900 mb-2">Setup Instructions</h4>
+                        <div class="text-sm text-blue-900">${this.renderMarkdown(server.setup_description)}</div>
+                    </div>
+                ` : ''}
+
+                ${isReconfiguration ? `
+                    <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                        <div class="flex">
+                            <svg class="w-5 h-5 text-yellow-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
+                            </svg>
+                            <div class="ml-3">
+                                <h3 class="text-sm font-medium text-yellow-800">Configuration Update</h3>
+                                <p class="text-sm text-yellow-700 mt-1">Changing the configuration will recreate the container with new settings. The container will be stopped and restarted.</p>
+                            </div>
+                        </div>
+                    </div>
+                ` : ''}
+
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Container Name</label>
+                        <input type="text" id="container-name" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500" placeholder="${defaultContainerName}" value="${defaultContainerName}" ${isReconfiguration ? 'readonly' : ''}>
+                        ${isReconfiguration ? '<p class="text-xs text-gray-500 mt-1">Container name cannot be changed during reconfiguration</p>' : ''}
+                    </div>
+                    
+                    <div>
+                        <div class="flex items-center justify-between mb-2">
+                            <label class="block text-sm font-medium text-gray-700">Environment Variables</label>
+                            <button type="button" id="add-env-var-btn" class="flex items-center px-2 py-1 text-xs font-medium text-primary-600 bg-primary-50 border border-primary-200 rounded hover:bg-primary-100 focus:outline-none focus:ring-1 focus:ring-primary-500">
+                                <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                                </svg>
+                                Add Variable
+                            </button>
+                        </div>
+                        <div id="env-vars-container" class="space-y-2">
+                            ${envVarsConfig.map((envVar, index) => `
+                                <div class="env-var-row flex items-center space-x-2" data-required="${envVar.required}" data-type="${envVar.type}">
+                                    <div class="flex-1">
+                                        <input type="text" class="env-var-name w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500 text-sm" placeholder="Variable name" value="${envVar.name}" ${envVar.required ? 'readonly' : ''}>
+                                    </div>
+                                    <div class="flex-1">
+                                        <input type="text" class="env-var-value w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500 text-sm" placeholder="Value" value="${envVar.value}">
+                                    </div>
+                                    <button type="button" class="remove-env-var-btn p-1 ${envVar.required ? 'text-gray-300 cursor-not-allowed' : 'text-red-500 hover:text-red-700'}" ${envVar.required ? 'disabled' : ''} title="${envVar.required ? 'Required variable cannot be removed' : 'Remove variable'}">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                        </svg>
+                                    </button>
+                                </div>
+                                ${envVar.description ? `
+                                    <div class="text-xs text-gray-500 ml-2 mb-4">
+                                        <span class="inline-flex items-center">
+                                            <span class="w-2 h-2 ${envVar.type === 'required' ? 'bg-red-400' : envVar.type === 'default' ? 'bg-green-400' : envVar.type === 'custom' ? 'bg-purple-400' : 'bg-blue-400'} rounded-full mr-1"></span>
+                                            ${envVar.type === 'required' ? 'Required' : envVar.type === 'default' ? 'Default' : envVar.type === 'custom' ? 'Custom' : 'Optional'}: ${envVar.description || 'User-defined variable'}
+                                        </span>
+                                    </div>
+                                ` : ''}
+                            `).join('')}
+                        </div>
+                        ${envVarsConfig.length === 0 ? `
+                            <div class="env-var-row flex items-center space-x-2" data-required="false">
+                                <div class="flex-1">
+                                    <input type="text" class="env-var-name w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500 text-sm" placeholder="Variable name">
+                                </div>
+                                <div class="flex-1">
+                                    <input type="text" class="env-var-value w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500 text-sm" placeholder="Value">
+                                </div>
+                                <button type="button" class="remove-env-var-btn p-1 text-red-500 hover:text-red-700" title="Remove variable">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                    </svg>
+                                </button>
+                            </div>
+                        ` : ''}
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Volume Mounts${volumesText ? ' (current configuration)' : ' (optional)'}</label>
+                        <textarea id="volume-mounts" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500" rows="3" placeholder="/host/path:/container/path
+/host/config:/app/config">${volumesText}</textarea>
+                        <p class="text-xs text-gray-500 mt-1">One mount per line in host_path:container_path format</p>
+                    </div>
+                </div>
+                
+                <div class="flex justify-end space-x-3 pt-4 border-t border-gray-200">
+                    <button class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50" onclick="Modal.hide()">
+                        Cancel
+                    </button>
+                    <button id="create-container-btn" class="px-4 py-2 text-sm font-medium text-white bg-primary-600 border border-transparent rounded-md hover:bg-primary-700" data-server-id="${runningServer.id}" data-is-reconfiguration="${isReconfiguration}">
+                        ${isReconfiguration ? 'Update Configuration' : 'Setup MCP Server'}
+                    </button>
+                </div>
+            </div>
+        `;
+
+        Modal.show(content, {
+            title: isReconfiguration ? `Configure Server: ${runningServer.name}` : `Setup MCP Server: ${server.name}`,
+            size: 'xl'
+        });
+
+        // Add event handlers
+        setTimeout(() => {
+            document.getElementById('create-container-btn')?.addEventListener('click', (e) => {
+                const isReconfig = e.target.getAttribute('data-is-reconfiguration') === 'true';
+                const serverId = e.target.getAttribute('data-server-id');
+                
+                if (isReconfig) {
+                    this.updateContainerConfiguration(serverId, server, containerConfig);
+                } else {
+                    this.createContainerFromForm(server);
+                }
+            });
+
+            // Add environment variable functionality
+            this.attachEnvVarEventListeners();
+            
+            // Add external link handling for markdown content within the modal
+            this.attachExternalLinkHandlers();
+        }, 100);
     }
 
     async showServerLogs(serverId) {
@@ -248,26 +575,43 @@ export class Servers {
             <div class="space-y-4">
                 <p class="text-gray-700">Are you sure you want to remove server "${server.name}"? This will stop and remove the container.</p>
                 <div class="flex justify-end space-x-3">
-                    <button class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50" onclick="Modal.hide()">
+                    <button id="cancel-remove-btn" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
                         Cancel
                     </button>
-                    <button class="px-4 py-2 text-sm font-medium text-white bg-red-600 border border-transparent rounded-md hover:bg-red-700" onclick="Servers.confirmRemoveServer('${serverId}')">
+                    <button id="confirm-remove-btn" class="px-4 py-2 text-sm font-medium text-white bg-red-600 border border-transparent rounded-md hover:bg-red-700" data-server-id="${serverId}">
                         Remove
                     </button>
                 </div>
             </div>
         `;
         Modal.show(content, { title: 'Remove Server' });
+
+        // Add event listeners after modal is shown
+        setTimeout(() => {
+            document.getElementById('cancel-remove-btn')?.addEventListener('click', () => {
+                Modal.hide();
+            });
+
+            document.getElementById('confirm-remove-btn')?.addEventListener('click', async (e) => {
+                const serverIdToRemove = e.target.getAttribute('data-server-id');
+                await this.confirmRemoveServer(serverIdToRemove);
+            });
+        }, 100);
     }
 
-    static async confirmRemoveServer(serverId) {
+    async confirmRemoveServer(serverId) {
         try {
-            await window.go.main.App.RemoveContainer(serverId);
+            console.log('Attempting to remove server:', serverId);
+            await window.go.main.App.RemoveContainer(serverId, true);
+            console.log('Server removal successful:', serverId);
             Modal.hide();
             // Refresh the servers list
-            window.currentPage?.loadServers();
+            await this.loadServers();
+            console.log('Servers list refreshed after removal');
         } catch (error) {
             console.error('Failed to remove server:', error);
+            Modal.hide();
+            this.showErrorModal('Remove Failed', `Failed to remove server: ${error.message || error}`);
         }
     }
 
@@ -634,202 +978,234 @@ export class Servers {
     }
 
     showServerConfigurationWizard(server) {
-        // Extract default values from registry metadata
-        const defaultPort = server.ports && Object.keys(server.ports).length > 0 ? Object.values(server.ports)[0] : '';
-        const memoryRequirement = server.resource_requirements && server.resource_requirements.memory ? server.resource_requirements.memory : '';
-        
-        // Pre-populate environment variables from registry metadata
-        let envVarsConfig = [];
-        if (server.environment_variables) {
-            // Handle required variables
-            if (server.environment_variables.required && Array.isArray(server.environment_variables.required)) {
-                server.environment_variables.required.forEach(envVar => {
-                    envVarsConfig.push({
-                        name: envVar.name,
-                        value: envVar.value || '',
-                        description: envVar.description || '',
-                        required: true,
-                        type: 'required'
-                    });
-                });
-            }
-            
-            // Handle default variables
-            if (server.environment_variables.default && Array.isArray(server.environment_variables.default)) {
-                server.environment_variables.default.forEach(envVar => {
-                    envVarsConfig.push({
-                        name: envVar.name,
-                        value: envVar.value || '',
-                        description: envVar.description || '',
-                        required: false,
-                        type: 'default'
-                    });
-                });
-            }
-            
-            // Handle optional variables
-            if (server.environment_variables.optional && Array.isArray(server.environment_variables.optional)) {
-                server.environment_variables.optional.forEach(envVar => {
-                    envVarsConfig.push({
-                        name: envVar.name,
-                        value: envVar.value || '',
-                        description: envVar.description || '',
-                        required: false,
-                        type: 'optional'
-                    });
-                });
-            }
+        // Use the new reusable configuration form
+        this.showServerConfigurationForm(server, server, null, false);
+    }
+
+    async updateContainerConfiguration(serverId, installedServer, containerConfig) {
+        const containerName = document.getElementById('container-name').value.trim();
+        const volumesText = document.getElementById('volume-mounts').value.trim();
+
+        if (!containerName) {
+            this.showErrorModal('Validation Error', 'Container name is required.');
+            return;
         }
-        
-        // Pre-populate volumes from registry metadata
-        let volumesText = '';
-        if (server.volumes && Array.isArray(server.volumes) && server.volumes.length > 0) {
-            volumesText = server.volumes.map(volume => {
-                if (typeof volume === 'string') {
-                    return volume;
-                } else if (volume.host_path && volume.container_path) {
-                    return `${volume.host_path}:${volume.container_path}`;
+
+        try {
+            // Parse environment variables from form
+            const environment = {};
+            const envVarRows = document.querySelectorAll('.env-var-row');
+            envVarRows.forEach(row => {
+                const nameInput = row.querySelector('.env-var-name');
+                const valueInput = row.querySelector('.env-var-value');
+                
+                if (nameInput && valueInput) {
+                    const name = nameInput.value.trim();
+                    const value = valueInput.value.trim();
+                    
+                    if (name) {
+                        environment[name] = value;
+                    }
                 }
-                return '';
-            }).filter(v => v).join('\\n');
+            });
+
+            // Parse volume mounts
+            const volumes = {};
+            if (volumesText) {
+                volumesText.split('\n').forEach(line => {
+                    const [hostPath, containerPath] = line.split(':');
+                    if (hostPath && containerPath) {
+                        volumes[hostPath.trim()] = containerPath.trim();
+                    }
+                });
+            }
+
+            // Get server defaults for configuration
+            let serverDefaults = {};
+            try {
+                serverDefaults = await window.go.main.App.GetServerDefaults();
+            } catch (error) {
+                console.warn('Failed to load server defaults, using fallbacks:', error);
+                serverDefaults = {
+                    auto_start: false,
+                    default_port: 8000,
+                    max_memory_mb: 512,
+                    restart_on_failure: true
+                };
+            }
+
+            // Extract MCP port from registry data
+            let containerPort = containerConfig.container_port || 0;
+            if (installedServer && installedServer.ports && installedServer.ports.mcp) {
+                containerPort = parseInt(installedServer.ports.mcp) || containerPort;
+            }
+
+            // Ensure we have a docker command - this is critical for container creation
+            // Use the docker command from the configured server (which was saved from the installed server)
+            let dockerCommand = containerConfig.docker_command || '';
+            
+            // Fallback to installed server if not available in configured server
+            if (!dockerCommand && installedServer && installedServer.docker_command) {
+                dockerCommand = installedServer.docker_command;
+            }
+            
+            console.log('=== DOCKER COMMAND DEBUG ===');
+            console.log('Docker command from containerConfig:', containerConfig.docker_command);
+            console.log('Docker command from installedServer:', installedServer?.docker_command);
+            console.log('Final docker command:', dockerCommand);
+            console.log('Container config:', containerConfig);
+            console.log('Installed server data:', installedServer);
+            console.log('=== END DEBUG ===');
+
+            // Use docker image from containerConfig (stored) or fall back to installedServer
+            const dockerImage = containerConfig.docker_image || (installedServer?.docker_image);
+            
+            if (!dockerImage) {
+                throw new Error('No Docker image available. Cannot recreate container without an image.');
+            }
+
+            const newConfig = {
+                name: containerName,
+                image: dockerImage,
+                port: containerConfig.port, // Keep the same host port
+                container_port: containerPort,
+                environment: environment,
+                volumes: volumes,
+                docker_command: dockerCommand,
+                memory_limit_mb: serverDefaults.max_memory_mb || 512,
+                restart_policy: serverDefaults.restart_on_failure ? "on-failure" : "no",
+                labels: {
+                    "neobelt.server-id": (installedServer?.id) || containerConfig.server_id,
+                    "neobelt.server-name": (installedServer?.name) || 'Unknown Server'
+                }
+            };
+
+            console.log('Updating container configuration:', newConfig);
+            
+            // Show confirmation modal first
+            this.showUpdateConfigurationConfirmation(serverId, containerConfig, newConfig, installedServer);
+
+        } catch (error) {
+            console.error('Failed to prepare configuration update:', error);
+            this.showErrorModal('Configuration Update Failed', `Failed to prepare configuration update: ${error.message || error}`);
         }
+    }
 
+    showUpdateConfigurationConfirmation(serverId, oldConfig, newConfig, server) {
         const content = `
-            <div class="space-y-6">
-                <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                    <h4 class="font-medium text-gray-900 mb-2">Server Details</h4>
-                    <dl class="grid grid-cols-2 gap-2 text-sm">
-                        <div>
-                            <dt class="text-gray-600">Name:</dt>
-                            <dd class="text-gray-900">${server.name}</dd>
+            <div class="space-y-4">
+                <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                    <div class="flex">
+                        <svg class="w-5 h-5 text-yellow-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
+                        </svg>
+                        <div class="ml-3">
+                            <h3 class="text-sm font-medium text-yellow-800">Confirm Configuration Update</h3>
+                            <p class="text-sm text-yellow-700 mt-1">This will recreate the container with the new configuration. The container will be stopped, removed, and recreated with the new settings.</p>
                         </div>
-                        <div>
-                            <dt class="text-gray-600">Image:</dt>
-                            <dd class="text-gray-900 font-mono text-xs">${server.docker_image}</dd>
-                        </div>
-                        ${server.version ? `
-                            <div>
-                                <dt class="text-gray-600">Version:</dt>
-                                <dd class="text-gray-900">${server.version}</dd>
-                            </div>
-                        ` : ''}
-                        ${memoryRequirement ? `
-                            <div>
-                                <dt class="text-gray-600">Memory:</dt>
-                                <dd class="text-gray-900">${memoryRequirement}</dd>
-                            </div>
-                        ` : ''}
-                        ${server.docker_command ? `
-                            <div class="col-span-2">
-                                <dt class="text-gray-600">Docker Command:</dt>
-                                <dd class="text-gray-900 font-mono text-xs bg-gray-100 p-2 rounded mt-1">${server.docker_command}</dd>
-                            </div>
-                        ` : ''}
-                    </dl>
-                </div>
-                
-                ${server.setup_description ? `
-                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                        <h4 class="font-medium text-gray-900 mb-2">Setup Instructions</h4>
-                        <div class="text-sm text-blue-900">${this.renderMarkdown(server.setup_description)}</div>
                     </div>
-                ` : ''}
+                </div>
 
-                <div class="space-y-4">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Container Name</label>
-                        <input type="text" id="container-name" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500" placeholder="${server.name.toLowerCase().replace(/\s+/g, '-')}-${Date.now()}" value="${server.name.toLowerCase().replace(/\s+/g, '-')}-${Date.now()}">
-                    </div>
-                    
-                    
-                    <div>
-                        <div class="flex items-center justify-between mb-2">
-                            <label class="block text-sm font-medium text-gray-700">Environment Variables</label>
-                            <button type="button" id="add-env-var-btn" class="flex items-center px-2 py-1 text-xs font-medium text-primary-600 bg-primary-50 border border-primary-200 rounded hover:bg-primary-100 focus:outline-none focus:ring-1 focus:ring-primary-500">
-                                <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
-                                </svg>
-                                Add Variable
-                            </button>
+                <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                    <h4 class="font-medium text-gray-900 mb-2">Changes Summary</h4>
+                    <div class="space-y-2 text-sm">
+                        <div class="grid grid-cols-3 gap-2">
+                            <span class="font-medium text-gray-600">Environment Variables:</span>
+                            <span class="text-gray-900">${Object.keys(newConfig.environment).length} configured</span>
                         </div>
-                        <div id="env-vars-container" class="space-y-2">
-                            ${envVarsConfig.map((envVar, index) => `
-                                <div class="env-var-row flex items-center space-x-2" data-required="${envVar.required}" data-type="${envVar.type}">
-                                    <div class="flex-1">
-                                        <input type="text" class="env-var-name w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500 text-sm" placeholder="Variable name" value="${envVar.name}" ${envVar.required ? 'readonly' : ''}>
-                                    </div>
-                                    <div class="flex-1">
-                                        <input type="text" class="env-var-value w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500 text-sm" placeholder="Value" value="${envVar.value}">
-                                    </div>
-                                    <button type="button" class="remove-env-var-btn p-1 ${envVar.required ? 'text-gray-300 cursor-not-allowed' : 'text-red-500 hover:text-red-700'}" ${envVar.required ? 'disabled' : ''} title="${envVar.required ? 'Required variable cannot be removed' : 'Remove variable'}">
-                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                                        </svg>
-                                    </button>
-                                </div>
-                                ${envVar.description ? `
-                                    <div class="text-xs text-gray-500 ml-2 mb-4">
-                                        <span class="inline-flex items-center">
-                                            <span class="w-2 h-2 ${envVar.type === 'required' ? 'bg-red-400' : envVar.type === 'default' ? 'bg-green-400' : 'bg-blue-400'} rounded-full mr-1"></span>
-                                            ${envVar.type === 'required' ? 'Required' : envVar.type === 'default' ? 'Default' : 'Optional'}: ${envVar.description}
-                                        </span>
-                                    </div>
-                                ` : ''}
-                            `).join('')}
+                        <div class="grid grid-cols-3 gap-2">
+                            <span class="font-medium text-gray-600">Volume Mounts:</span>
+                            <span class="text-gray-900">${Object.keys(newConfig.volumes).length} configured</span>
                         </div>
-                        ${envVarsConfig.length === 0 ? `
-                            <div class="env-var-row flex items-center space-x-2" data-required="false">
-                                <div class="flex-1">
-                                    <input type="text" class="env-var-name w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500 text-sm" placeholder="Variable name">
-                                </div>
-                                <div class="flex-1">
-                                    <input type="text" class="env-var-value w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500 text-sm" placeholder="Value">
-                                </div>
-                                <button type="button" class="remove-env-var-btn p-1 text-red-500 hover:text-red-700" title="Remove variable">
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                                    </svg>
-                                </button>
-                            </div>
-                        ` : ''}
-                    </div>
-                    
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Volume Mounts${volumesText ? ' (pre-populated from registry)' : ' (optional)'}</label>
-                        <textarea id="volume-mounts" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500" rows="3" placeholder="/host/path:/container/path
-/host/config:/app/config">${volumesText}</textarea>
-                        <p class="text-xs text-gray-500 mt-1">One mount per line in host_path:container_path format</p>
+                        <div class="grid grid-cols-3 gap-2">
+                            <span class="font-medium text-gray-600">Port:</span>
+                            <span class="text-gray-900">${newConfig.port} (unchanged)</span>
+                        </div>
                     </div>
                 </div>
                 
-                <div class="flex justify-end space-x-3 pt-4 border-t border-gray-200">
+                <div class="flex justify-end space-x-3">
                     <button class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50" onclick="Modal.hide()">
                         Cancel
                     </button>
-                    <button id="create-container-btn" class="px-4 py-2 text-sm font-medium text-white bg-primary-600 border border-transparent rounded-md hover:bg-primary-700">
-                        Setup MCP Server
+                    <button id="confirm-update-btn" class="px-4 py-2 text-sm font-medium text-white bg-yellow-600 border border-transparent rounded-md hover:bg-yellow-700">
+                        Update Configuration
                     </button>
                 </div>
             </div>
         `;
 
         Modal.show(content, {
-            title: `Setup MCP Server: ${server.name}`,
-            size: 'xl'
+            title: 'Confirm Configuration Update',
+            size: 'lg'
         });
 
-        // Add create container handler and environment variable management
+        // Add confirmation handler
         setTimeout(() => {
-            document.getElementById('create-container-btn')?.addEventListener('click', () => {
-                this.createContainerFromForm(server);
+            document.getElementById('confirm-update-btn')?.addEventListener('click', async () => {
+                await this.executeContainerConfigurationUpdate(serverId, oldConfig, newConfig, server);
             });
-
-            // Add environment variable functionality
-            this.attachEnvVarEventListeners();
-            
-            // Add external link handling for markdown content within the modal
-            this.attachExternalLinkHandlers();
         }, 100);
+    }
+
+    async executeContainerConfigurationUpdate(serverId, oldConfig, newConfig, installedServer) {
+        try {
+            console.log('Starting container configuration update...');
+            
+            // Step 1: Stop the container
+            console.log('Stopping container...');
+            await window.go.main.App.StopContainer(serverId);
+            
+            // Step 2: Remove the old container
+            console.log('Removing old container...');
+            await window.go.main.App.RemoveContainer(serverId, true);
+            
+            // Step 3: Create new container with updated configuration
+            console.log('Creating new container with updated configuration...');
+            const newContainerId = await window.go.main.App.CreateContainer(newConfig);
+            console.log('New container created with ID:', newContainerId);
+            
+            // Step 4: Start the new container
+            console.log('Starting new container...');
+            await window.go.main.App.StartContainer(newContainerId);
+            
+            // Step 5: Update the configured server entry
+            try {
+                console.log('Updating configured server entry...');
+                const serverIdForConfig = (installedServer?.id) || containerConfig.server_id;
+                await window.go.main.App.CreateConfiguredServer(
+                    serverIdForConfig,
+                    newConfig.name,
+                    newContainerId,
+                    newConfig.port,
+                    newConfig.environment,
+                    newConfig.volumes
+                );
+                console.log('Configured server entry updated successfully');
+            } catch (configError) {
+                console.warn('Failed to update configured server entry:', configError);
+                // Don't fail the whole operation - container was updated successfully
+            }
+            
+            Modal.hide();
+            console.log('Refreshing servers list...');
+            await this.loadServers(); // Refresh the list
+            
+            this.showSuccessModal('Configuration Updated', `Server "${newConfig.name}" has been successfully updated with the new configuration.`);
+            
+        } catch (error) {
+            console.error('Failed to update container configuration:', error);
+            Modal.hide();
+            this.showErrorModal('Update Failed', `Failed to update container configuration: ${error.message || error}`);
+            
+            // Try to restart the original container if it exists
+            try {
+                console.log('Attempting to restart original container...');
+                await window.go.main.App.StartContainer(serverId);
+            } catch (restartError) {
+                console.error('Failed to restart original container:', restartError);
+            }
+        }
     }
 
     showContainerIssueModal(containerName, container, logs) {
@@ -1092,7 +1468,8 @@ export class Servers {
             console.log('Container created successfully with ID:', containerId);
             
             // Start the container only if auto-start is enabled in server defaults
-            if (serverDefaults.auto_start) {
+            const shouldAutoStart = serverDefaults.auto_start;
+            if (shouldAutoStart) {
                 console.log('Auto-start enabled, starting container:', containerId);
                 await window.go.main.App.StartContainer(containerId);
                 console.log('Container started automatically');
@@ -1123,16 +1500,16 @@ export class Servers {
             
             // Check container status and show appropriate modal
             console.log('Checking container creation result...');
-            await this.showContainerCreationResult(containerId, containerName);
+            await this.showContainerCreationResult(containerId, containerName, shouldAutoStart);
         } catch (error) {
             console.error('Failed to create container:', error);
             this.showErrorModal('Create MCP Server Failed', `Failed to create MCP Server: ${error.message || error}`);
         }
     }
 
-    async showContainerCreationResult(containerId, containerName) {
+    async showContainerCreationResult(containerId, containerName, shouldAutoStart = true) {
         try {
-            console.log(`Checking container creation result for ID: ${containerId}, Name: ${containerName}`);
+            console.log(`Checking container creation result for ID: ${containerId}, Name: ${containerName}, AutoStart: ${shouldAutoStart}`);
             
             // Get managed containers to verify the container exists and get its status
             const containers = await window.go.main.App.GetManagedContainers();
@@ -1160,10 +1537,15 @@ export class Servers {
 
             console.log('Container found:', container);
             const isRunning = container.status === 'running';
+            
             if (isRunning) {
                 console.log('Container is running successfully');
                 // Container is running successfully
                 this.showSuccessModal('MCP Server Created', `MCP Server "${containerName}" has been created and is running successfully. Container ID: ${containerId.substring(0, 12)}`);
+            } else if (!shouldAutoStart && (container.status === 'created' || container.status === 'exited')) {
+                console.log('Container created but not started (auto-start disabled)');
+                // Container was created but not started because auto-start is disabled
+                this.showSuccessModal('MCP Server Created', `MCP Server "${containerName}" has been created successfully but not started (auto-start is disabled). You can start it manually from the servers list. Container ID: ${containerId.substring(0, 12)}`);
             } else {
                 console.log('Container has issues, getting logs...');
                 // Container has issues, show detailed modal with logs
@@ -1174,7 +1556,10 @@ export class Servers {
         } catch (error) {
             console.error('Failed to check container status:', error);
             // Fallback to basic success message
-            this.showSuccessModal('MCP Server Created', `MCP Server "${containerName}" has been created. Container ID: ${containerId.substring(0, 12)}`);
+            const statusMessage = shouldAutoStart 
+                ? `MCP Server "${containerName}" has been created. Container ID: ${containerId.substring(0, 12)}`
+                : `MCP Server "${containerName}" has been created but not started (auto-start disabled). Container ID: ${containerId.substring(0, 12)}`;
+            this.showSuccessModal('MCP Server Created', statusMessage);
         }
     }
 

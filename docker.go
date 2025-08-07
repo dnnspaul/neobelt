@@ -36,6 +36,7 @@ type DockerService struct {
 type ContainerInfo struct {
 	ID          string            `json:"id"`
 	Name        string            `json:"name"`
+	DisplayName string            `json:"display_name"`
 	Image       string            `json:"image"`
 	Status      string            `json:"status"`
 	State       string            `json:"state"`
@@ -63,13 +64,9 @@ func NewDockerService() (*DockerService, error) {
 
 // GetManagedContainers returns all containers managed by neobelt
 func (ds *DockerService) GetManagedContainers(ctx context.Context) ([]ContainerInfo, error) {
-	log.Printf("[DEBUG] GetManagedContainers called")
-
-	// Filter for containers with neobelt.managed-by=true label
 	filterArgs := filters.NewArgs()
 	filterArgs.Add("label", "neobelt.managed-by=true")
 
-	log.Printf("[DEBUG] Listing containers with filter: neobelt.managed-by=true")
 	containers, err := ds.client.ContainerList(ctx, container.ListOptions{
 		All:     true,
 		Filters: filterArgs,
@@ -79,20 +76,6 @@ func (ds *DockerService) GetManagedContainers(ctx context.Context) ([]ContainerI
 		return nil, fmt.Errorf("failed to list containers: %w", err)
 	}
 
-	log.Printf("[DEBUG] Found %d containers with neobelt label", len(containers))
-	for i, cont := range containers {
-		log.Printf("[DEBUG] Container %d: ID=%s, Names=%v, Labels=%+v", i, cont.ID, cont.Names, cont.Labels)
-	}
-
-	// Also list ALL containers for debugging purposes
-	allContainers, err := ds.client.ContainerList(ctx, container.ListOptions{All: true})
-	if err == nil {
-		log.Printf("[DEBUG] Total containers in system: %d", len(allContainers))
-		for i, cont := range allContainers {
-			log.Printf("[DEBUG] All Container %d: ID=%s, Names=%v, ManagedBy=%s", i, cont.ID, cont.Names, cont.Labels["neobelt.managed-by"])
-		}
-	}
-
 	var containerInfos []ContainerInfo
 	for _, cont := range containers {
 		info, err := ds.getContainerInfo(ctx, cont.ID)
@@ -100,11 +83,9 @@ func (ds *DockerService) GetManagedContainers(ctx context.Context) ([]ContainerI
 			log.Printf("Warning: failed to get info for container %s: %v", cont.ID, err)
 			continue
 		}
-		log.Printf("[DEBUG] Successfully processed container info for %s: %+v", cont.ID, info)
 		containerInfos = append(containerInfos, *info)
 	}
 
-	log.Printf("[DEBUG] Returning %d managed containers", len(containerInfos))
 	return containerInfos, nil
 }
 
@@ -622,4 +603,82 @@ func parseCommandArgs(cmd string) []string {
 	}
 
 	return args
+}
+
+// GetOrphanedManagedContainers returns containers managed by neobelt but not in the provided configured servers list
+func (ds *DockerService) GetOrphanedManagedContainers(ctx context.Context, configuredServers []ConfiguredServer) ([]ContainerInfo, error) {
+	// Get all managed containers
+	allManagedContainers, err := ds.GetManagedContainers(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get managed containers: %w", err)
+	}
+
+	// Create a map of configured container IDs for quick lookup
+	configuredMap := make(map[string]bool)
+	for _, configuredServer := range configuredServers {
+		if configuredServer.ContainerID != "" {
+			// Handle both short and full container IDs
+			configuredMap[configuredServer.ContainerID] = true
+		}
+	}
+
+	// Find containers that are managed by neobelt but not in configuration
+	var orphaned []ContainerInfo
+	for _, container := range allManagedContainers {
+		isConfigured := false
+		
+		// Check if this container is in our configured servers
+		for configuredContainerID := range configuredMap {
+			if container.ID == configuredContainerID ||
+				(len(configuredContainerID) > len(container.ID) && strings.HasPrefix(configuredContainerID, container.ID)) ||
+				(len(container.ID) > len(configuredContainerID) && strings.HasPrefix(container.ID, configuredContainerID)) {
+				isConfigured = true
+				break
+			}
+		}
+
+		if !isConfigured {
+			orphaned = append(orphaned, container)
+		}
+	}
+
+	return orphaned, nil
+}
+
+// CleanupOrphanedContainers stops and removes orphaned neobelt containers
+func (ds *DockerService) CleanupOrphanedContainers(ctx context.Context, configuredServers []ConfiguredServer) error {
+	orphaned, err := ds.GetOrphanedManagedContainers(ctx, configuredServers)
+	if err != nil {
+		return fmt.Errorf("failed to get orphaned containers: %w", err)
+	}
+
+	if len(orphaned) == 0 {
+		log.Printf("[INFO] No orphaned neobelt containers found")
+		return nil
+	}
+
+	log.Printf("[INFO] Found %d orphaned neobelt containers, cleaning up...", len(orphaned))
+
+	for _, container := range orphaned {
+		log.Printf("[INFO] Cleaning up orphaned container: %s (%s)", container.ID, container.Name)
+
+		// Stop the container if it's running
+		if container.State == "running" {
+			log.Printf("[INFO] Stopping running orphaned container: %s", container.ID)
+			if err := ds.StopContainer(ctx, container.ID); err != nil {
+				log.Printf("[WARNING] Failed to stop orphaned container %s: %v", container.ID, err)
+				// Continue with removal even if stop fails
+			}
+		}
+
+		// Remove the container
+		log.Printf("[INFO] Removing orphaned container: %s", container.ID)
+		if err := ds.RemoveContainer(ctx, container.ID, true); err != nil {
+			log.Printf("[ERROR] Failed to remove orphaned container %s: %v", container.ID, err)
+		} else {
+			log.Printf("[INFO] Successfully removed orphaned container: %s", container.ID)
+		}
+	}
+
+	return nil
 }

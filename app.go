@@ -668,11 +668,14 @@ func convertVolumesToMap(volumes []string) map[string]string {
 
 // GetManagedContainers returns all Docker containers managed by neobelt
 func (a *App) GetManagedContainers() ([]ContainerInfo, error) {
-	fmt.Printf("[DEBUG] App.GetManagedContainers called\n")
-
 	if a.dockerService == nil {
-		fmt.Printf("[ERROR] Docker service not available\n")
-		return nil, fmt.Errorf("Docker service not available")
+		return nil, fmt.Errorf("docker service not available")
+	}
+
+	// Clean up orphaned containers before returning the managed ones
+	if err := a.CleanupOrphanedContainers(); err != nil {
+		fmt.Printf("[WARNING] Failed to cleanup orphaned containers: %v\n", err)
+		// Continue even if cleanup fails - we still want to return the current containers
 	}
 
 	containers, err := a.dockerService.GetManagedContainers(a.ctx)
@@ -684,7 +687,7 @@ func (a *App) GetManagedContainers() ([]ContainerInfo, error) {
 	// Enrich containers with version information from configured servers
 	if a.configManager != nil {
 		configuredServers := a.configManager.GetConfiguredServers()
-		
+
 		// Create a map for quick lookup by container ID
 		configMap := make(map[string]ConfiguredServer)
 		for _, config := range configuredServers {
@@ -692,31 +695,33 @@ func (a *App) GetManagedContainers() ([]ContainerInfo, error) {
 				configMap[config.ContainerID] = config
 			}
 		}
-		
-		// Enrich each container with version information
+
+		// Enrich each container with version and display name information
 		for i := range containers {
 			container := &containers[i]
-			
+
 			// Look for matching configured server by container ID (handle both short and full IDs)
 			for configContainerID, config := range configMap {
-				if configContainerID == container.ID || 
+				if configContainerID == container.ID ||
 					configContainerID[:min(len(configContainerID), len(container.ID))] == container.ID ||
 					container.ID[:min(len(configContainerID), len(container.ID))] == configContainerID {
-					
+
 					container.Version = config.Version
-					fmt.Printf("[DEBUG] Enriched container %s with version %s\n", container.ID, container.Version)
+					container.DisplayName = config.Name
 					break
 				}
 			}
-			
-			// If no version found, set default
+
+			// Set defaults if no configuration found
 			if container.Version == "" {
 				container.Version = "unknown"
+			}
+			if container.DisplayName == "" {
+				container.DisplayName = container.Name // Fallback to container name
 			}
 		}
 	}
 
-	fmt.Printf("[DEBUG] App.GetManagedContainers returning %d containers\n", len(containers))
 	return containers, nil
 }
 
@@ -1010,6 +1015,7 @@ func (a *App) CreateConfiguredServer(installedServerID, containerName, container
 		ContainerID:       containerID,
 		InstalledServerID: installedServerID,
 		DockerImage:       installedServer.DockerImage,
+		DockerCommand:     installedServer.DockerCommand,
 		Port:              port,
 		ContainerPort:     containerPort,
 		Environment:       environment,
@@ -1071,4 +1077,32 @@ func (a *App) findInstalledServerByID(id string) *InstalledServer {
 		}
 	}
 	return nil
+}
+
+// GetOrphanedContainers returns containers managed by neobelt but not in configuration
+func (a *App) GetOrphanedContainers() ([]ContainerInfo, error) {
+	if a.dockerService == nil {
+		return nil, fmt.Errorf("Docker service not available")
+	}
+
+	if a.configManager == nil {
+		return nil, fmt.Errorf("configuration manager not available")
+	}
+
+	configuredServers := a.configManager.GetConfiguredServers()
+	return a.dockerService.GetOrphanedManagedContainers(a.ctx, configuredServers)
+}
+
+// CleanupOrphanedContainers removes orphaned neobelt containers
+func (a *App) CleanupOrphanedContainers() error {
+	if a.dockerService == nil {
+		return fmt.Errorf("Docker service not available")
+	}
+
+	if a.configManager == nil {
+		return fmt.Errorf("configuration manager not available")
+	}
+
+	configuredServers := a.configManager.GetConfiguredServers()
+	return a.dockerService.CleanupOrphanedContainers(a.ctx, configuredServers)
 }

@@ -68,6 +68,7 @@ type ConfiguredServer struct {
 	ContainerID       string            `json:"container_id" mapstructure:"container_id"`
 	InstalledServerID string            `json:"installed_server_id" mapstructure:"installed_server_id"`
 	DockerImage       string            `json:"docker_image" mapstructure:"docker_image"`
+	DockerCommand     string            `json:"docker_command" mapstructure:"docker_command"`
 	Port              int               `json:"port" mapstructure:"port"`
 	ContainerPort     int               `json:"container_port" mapstructure:"container_port"` // MCP port from registry
 	Environment       map[string]string `json:"environment" mapstructure:"environment"`

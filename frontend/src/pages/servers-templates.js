@@ -22,7 +22,7 @@ export function renderMainTemplate(servers, loading) {
                                 <svg class="w-4 h-4 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
                                 </svg>
-                                Manage Installed
+                                Manage Images
                             </button>
                             <button id="add-new-server-btn" class="px-4 py-2 text-sm font-medium text-white bg-primary-600 border border-transparent rounded-md hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500">
                                 <svg class="w-4 h-4 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -86,7 +86,7 @@ export function renderServerCard(server) {
                         </div>
                         <div class="flex-1">
                             <div class="flex items-center space-x-2">
-                                <h3 class="text-lg font-semibold text-gray-900">${server.name}</h3>
+                                <h3 class="text-lg font-semibold text-gray-900">${server.display_name || server.name}</h3>
                                 <span class="px-2 py-1 text-xs font-medium ${getStatusBadgeColor(server.status)} rounded-full">${server.status.toUpperCase()}</span>
                             </div>
                             <div class="flex items-center space-x-4 mt-2 text-sm text-gray-500">
@@ -143,10 +143,19 @@ export function renderServerActionButtons(server) {
                 Restart
             </button>
         `;
-    } else if (server.status === 'stopped' || server.status === 'exited' || server.status === 'dead') {
+    } else if (server.status === 'stopped' || server.status === 'exited' || server.status === 'dead' || server.status === 'created') {
         return `
             <button class="server-start-btn px-3 py-1 text-xs font-medium text-green-700 bg-green-100 border border-green-300 rounded hover:bg-green-200" data-server-id="${server.id}">
                 Start
+            </button>
+        `;
+    } else if (server.status === 'restarting') {
+        return `
+            <button class="server-stop-btn px-3 py-1 text-xs font-medium text-red-700 bg-red-100 border border-red-300 rounded hover:bg-red-200" data-server-id="${server.id}">
+                Stop
+            </button>
+            <button class="server-debug-btn px-3 py-1 text-xs font-medium text-yellow-700 bg-yellow-100 border border-yellow-300 rounded hover:bg-yellow-200" data-server-id="${server.id}">
+                Debug
             </button>
         `;
     } else {
@@ -162,7 +171,7 @@ export function renderLoadingState() {
     return `
         <div class="flex items-center justify-center py-12">
             <div class="text-center">
-                <svg class="animate-spin -ml-1 mr-3 h-8 w-8 text-primary-600 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <svg class="animate-spin h-8 w-8 text-primary-600 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                     <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>

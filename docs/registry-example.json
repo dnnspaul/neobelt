@@ -82,5 +82,39 @@
             "admin": null
         },
         "volumes": []
+    },
+    {
+        "name": "Context7",
+        "description": "Up-to-date code documentation for LLMs and AI code editors.",
+        "setup_description": "The MCP server runs plug and play. No configuration is required.",
+        "support_url": "https://github.com/upstash/context7/issues",
+        "docker_image": "docker.io/mcp/context7:latest",
+        "version": "1.0.0",
+        "license": "MIT",
+        "maintainer": "https://github.com/upstash",
+        "tags": [
+            "documentation",
+            "coding"
+        ],
+        "architecture": [
+            "linux/amd64",
+            "linux/arm64"
+        ],
+        "health_check": {},
+        "resource_requirements": {
+            "memory": "1GB",
+            "cpu": "0.5"
+        },
+        "docker_command": "node dist/index.js --transport http",
+        "environment_variables": {
+            "required": [],
+            "optional": [],
+            "default": []
+        },
+        "ports": {
+            "mcp": 8080,
+            "admin": null
+        },
+        "volumes": []
     }
 ]

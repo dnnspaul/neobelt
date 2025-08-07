@@ -29,6 +29,10 @@ export function getStatusBgColor(status) {
         case 'exited':
         case 'dead':
             return 'bg-gray-100';
+        case 'created':
+            return 'bg-blue-100';
+        case 'restarting':
+            return 'bg-yellow-100';
         case 'error':
             return 'bg-red-100';
         default:
@@ -44,6 +48,10 @@ export function getStatusTextColor(status) {
         case 'exited':
         case 'dead':
             return 'text-gray-700';
+        case 'created':
+            return 'text-blue-700';
+        case 'restarting':
+            return 'text-yellow-700';
         case 'error':
             return 'text-red-700';
         default:
@@ -59,6 +67,10 @@ export function getStatusBadgeColor(status) {
         case 'exited':
         case 'dead':
             return 'bg-gray-100 text-gray-800';
+        case 'created':
+            return 'bg-blue-100 text-blue-800';
+        case 'restarting':
+            return 'bg-yellow-100 text-yellow-800';
         case 'error':
             return 'bg-red-100 text-red-800';
         default:

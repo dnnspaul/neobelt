@@ -152,6 +152,7 @@ export function updateServerResourceDisplay(serverId, containerData) {
     }
 }
 
+
 export function startResourceUsageRefresh() {
     // Clear any existing interval
     if (this.resourceRefreshInterval) {
