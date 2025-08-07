@@ -64,6 +64,11 @@ class App {
             return;
         }
         
+        // Cleanup previous page if it has a cleanup method
+        if (this.currentPage && this.pages[this.currentPage] && this.pages[this.currentPage].cleanup) {
+            this.pages[this.currentPage].cleanup();
+        }
+        
         mainContent.innerHTML = page.render();
         
         // Make the page instance accessible globally for modal callbacks

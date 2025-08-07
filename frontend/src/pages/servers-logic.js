@@ -134,6 +134,14 @@ export async function debugServer(serverId) {
 export function updateUI() {
     const mainContent = document.getElementById('main-content');
     if (mainContent) {
+        // Double-check that we're still on the servers page before updating UI
+        const currentHash = window.location.hash.slice(1) || 'dashboard';
+        if (currentHash !== 'servers') {
+            // Stop refresh and don't update UI if we're no longer on the servers page
+            this.stopResourceUsageRefresh();
+            return;
+        }
+        
         mainContent.innerHTML = this.render();
         this.attachEventListenersAfterRender();
         
@@ -148,6 +156,14 @@ export function updateUI() {
 
 export async function refreshResourceUsage() {
     if (!this.servers || this.servers.length === 0) return;
+    
+    // Check if we're still on the servers page to prevent race conditions
+    const currentHash = window.location.hash.slice(1) || 'dashboard';
+    if (currentHash !== 'servers') {
+        // Stop the refresh interval if we're no longer on the servers page
+        this.stopResourceUsageRefresh();
+        return;
+    }
     
     // Prevent overlapping calls to avoid Wails callback registration issues
     if (this.refreshing) {

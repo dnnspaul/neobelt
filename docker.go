@@ -441,7 +441,7 @@ func (ds *DockerService) CreateContainer(ctx context.Context, config ContainerCr
 
 		hostConfig.PortBindings = nat.PortMap{
 			containerPort: []nat.PortBinding{
-				{HostIP: "0.0.0.0", HostPort: strconv.Itoa(config.Port)},
+				{HostIP: "127.0.0.1", HostPort: strconv.Itoa(config.Port)},
 			},
 		}
 		containerConfig.ExposedPorts = nat.PortSet{
@@ -626,7 +626,7 @@ func (ds *DockerService) GetOrphanedManagedContainers(ctx context.Context, confi
 	var orphaned []ContainerInfo
 	for _, container := range allManagedContainers {
 		isConfigured := false
-		
+
 		// Check if this container is in our configured servers
 		for configuredContainerID := range configuredMap {
 			if container.ID == configuredContainerID ||
@@ -653,7 +653,6 @@ func (ds *DockerService) CleanupOrphanedContainers(ctx context.Context, configur
 	}
 
 	if len(orphaned) == 0 {
-		log.Printf("[INFO] No orphaned neobelt containers found")
 		return nil
 	}
 
