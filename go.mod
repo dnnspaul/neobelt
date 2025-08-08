@@ -7,8 +7,10 @@ toolchain go1.23.5
 require (
 	github.com/docker/docker v28.3.2+incompatible
 	github.com/docker/go-connections v0.5.0
+	github.com/emersion/go-autostart v0.0.0-20250403115856-34830d6457d2
 	github.com/spf13/viper v1.20.1
 	github.com/wailsapp/wails/v2 v2.10.2
+	golang.org/x/crypto v0.39.0
 )
 
 require (
@@ -69,7 +71,6 @@ require (
 	go.opentelemetry.io/otel/trace v1.37.0 // indirect
 	go.uber.org/atomic v1.9.0 // indirect
 	go.uber.org/multierr v1.9.0 // indirect
-	golang.org/x/crypto v0.39.0 // indirect
 	golang.org/x/mod v0.25.0 // indirect
 	golang.org/x/net v0.41.0 // indirect
 	golang.org/x/sync v0.15.0 // indirect

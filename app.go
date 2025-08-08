@@ -6,9 +6,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/emersion/go-autostart"
 )
 
 // min returns the minimum of two integers
@@ -565,7 +569,7 @@ func (a *App) updateContainerSettings(containerID string, serverDefaults ServerD
 
 	var containerInfo *ContainerInfo
 	for _, container := range containers {
-		if container.ID == containerID || strings.HasPrefix(container.ID, containerID) {
+		if container.ID == containerID || strings.HasPrefix(container.ID, containerID) || strings.HasPrefix(containerID, container.ID) {
 			containerInfo = &container
 			break
 		}
@@ -1105,4 +1109,189 @@ func (a *App) CleanupOrphanedContainers() error {
 
 	configuredServers := a.configManager.GetConfiguredServers()
 	return a.dockerService.CleanupOrphanedContainers(a.ctx, configuredServers)
+}
+
+// GetAppConfig returns the current app configuration
+func (a *App) GetAppConfig() (*AppConfig, error) {
+	if a.configManager == nil {
+		return nil, fmt.Errorf("configuration manager not available")
+	}
+
+	config := a.configManager.GetConfig()
+	if config == nil {
+		return nil, fmt.Errorf("no configuration available")
+	}
+
+	// Create a copy and update the autostart status with the actual OS-level status
+	appConfig := config.App
+	appConfig.AutoStart = a.isAutostartEnabled()
+
+	return &appConfig, nil
+}
+
+// UpdateAppConfig updates the app configuration
+func (a *App) UpdateAppConfig(appConfig AppConfig) error {
+	if a.configManager == nil {
+		return fmt.Errorf("configuration manager not available")
+	}
+
+	config := a.configManager.GetConfig()
+	if config == nil {
+		return fmt.Errorf("no configuration available")
+	}
+
+	// Check if autostart setting changed and handle it
+	oldConfig := config.App
+	if oldConfig.AutoStart != appConfig.AutoStart {
+		if err := a.handleAutostartChange(appConfig.AutoStart); err != nil {
+			fmt.Printf("Warning: Failed to update autostart setting: %v\n", err)
+			// Don't fail the entire config update if autostart fails
+		}
+	}
+
+	config.App = appConfig
+
+	// Save configuration
+	return a.configManager.Save()
+}
+
+// handleAutostartChange manages the OS-level autostart setting
+func (a *App) handleAutostartChange(enable bool) error {
+	app := &autostart.App{
+		Name:        "Neobelt",
+		DisplayName: "Neobelt - MCP Server Manager",
+		Exec:        []string{getExecutablePath()},
+	}
+
+	if enable {
+		fmt.Println("Enabling autostart for Neobelt...")
+		return app.Enable()
+	} else {
+		fmt.Println("Disabling autostart for Neobelt...")
+		return app.Disable()
+	}
+}
+
+// getExecutablePath returns the path to the current executable
+func getExecutablePath() string {
+	exec, err := os.Executable()
+	if err != nil {
+		fmt.Printf("Warning: Could not get executable path: %v\n", err)
+		return "neobelt" // fallback
+	}
+	
+	// Get absolute path
+	absPath, err := filepath.Abs(exec)
+	if err != nil {
+		fmt.Printf("Warning: Could not get absolute path: %v\n", err)
+		return exec
+	}
+	
+	return absPath
+}
+
+// isAutostartEnabled checks if autostart is currently enabled at OS level
+func (a *App) isAutostartEnabled() bool {
+	app := &autostart.App{
+		Name:        "Neobelt",
+		DisplayName: "Neobelt - MCP Server Manager",
+		Exec:        []string{getExecutablePath()},
+	}
+	
+	return app.IsEnabled()
+}
+
+// GetRemoteAccess returns the current remote access configuration
+func (a *App) GetRemoteAccess() (*RemoteAccessConfig, error) {
+	if a.configManager == nil {
+		return nil, fmt.Errorf("configuration manager not available")
+	}
+
+	config := a.configManager.GetConfig()
+	if config == nil {
+		return &RemoteAccessConfig{
+			RemoteServer: "remote.neobelt.io",
+			Username:     "",
+			PrivateKey:   "",
+			PublicKey:    "",
+			KeyGenerated: false,
+		}, nil
+	}
+
+	return &config.RemoteAccess, nil
+}
+
+// UpdateRemoteAccess updates the remote access configuration
+func (a *App) UpdateRemoteAccess(remoteAccess RemoteAccessConfig) error {
+	if a.configManager == nil {
+		return fmt.Errorf("configuration manager not available")
+	}
+
+	config := a.configManager.GetConfig()
+	if config == nil {
+		return fmt.Errorf("no configuration loaded")
+	}
+
+	config.RemoteAccess = remoteAccess
+	return a.configManager.Save()
+}
+
+// GenerateSSHKeys generates a new SSH key pair for remote access
+func (a *App) GenerateSSHKeys() (*SSHKeyPair, error) {
+	if a.configManager == nil {
+		return nil, fmt.Errorf("configuration manager not available")
+	}
+
+	// Generate new key pair
+	keyPair, err := GenerateSSHKeyPair()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate SSH key pair: %w", err)
+	}
+
+	// Update configuration
+	config := a.configManager.GetConfig()
+	if config == nil {
+		return nil, fmt.Errorf("no configuration loaded")
+	}
+
+	config.RemoteAccess.PrivateKey = keyPair.PrivateKey
+	config.RemoteAccess.PublicKey = keyPair.PublicKey
+	config.RemoteAccess.KeyGenerated = true
+
+	// Save configuration
+	if err := a.configManager.Save(); err != nil {
+		return nil, fmt.Errorf("failed to save configuration: %w", err)
+	}
+
+	return keyPair, nil
+}
+
+// GetSSHPublicKey returns the current SSH public key
+func (a *App) GetSSHPublicKey() (string, error) {
+	if a.configManager == nil {
+		return "", fmt.Errorf("configuration manager not available")
+	}
+
+	config := a.configManager.GetConfig()
+	if config == nil {
+		return "", fmt.Errorf("no configuration loaded")
+	}
+
+	// If we have a private key but no public key, derive it
+	if config.RemoteAccess.PrivateKey != "" && config.RemoteAccess.PublicKey == "" {
+		publicKey, err := GetPublicKeyFromPrivate(config.RemoteAccess.PrivateKey)
+		if err != nil {
+			return "", fmt.Errorf("failed to derive public key from private key: %w", err)
+		}
+
+		// Update configuration with derived public key
+		config.RemoteAccess.PublicKey = publicKey
+		if err := a.configManager.Save(); err != nil {
+			return "", fmt.Errorf("failed to save derived public key: %w", err)
+		}
+
+		return publicKey, nil
+	}
+
+	return config.RemoteAccess.PublicKey, nil
 }

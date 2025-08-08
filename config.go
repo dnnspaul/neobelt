@@ -12,6 +12,7 @@ import (
 type Configuration struct {
 	App               AppConfig            `json:"app" mapstructure:"app"`
 	ServerDefaults    ServerDefaultsConfig `json:"server_defaults" mapstructure:"server_defaults"`
+	RemoteAccess      RemoteAccessConfig   `json:"remote_access" mapstructure:"remote_access"`
 	Registries        []Registry           `json:"registries" mapstructure:"registries"`
 	InstalledServers  []InstalledServer    `json:"installed_servers" mapstructure:"installed_servers"`
 	ConfiguredServers []ConfiguredServer   `json:"configured_servers" mapstructure:"configured_servers"`
@@ -24,6 +25,8 @@ type AppConfig struct {
 	AutoRefresh     bool   `json:"auto_refresh" mapstructure:"auto_refresh"`
 	RefreshInterval int    `json:"refresh_interval" mapstructure:"refresh_interval"` // minutes
 	CheckForUpdates bool   `json:"check_for_updates" mapstructure:"check_for_updates"`
+	StartupPage     string `json:"startup_page" mapstructure:"startup_page"`
+	AutoStart       bool   `json:"auto_start" mapstructure:"auto_start"`
 }
 
 // ServerDefaultsConfig contains default settings for new servers
@@ -32,6 +35,15 @@ type ServerDefaultsConfig struct {
 	DefaultPort      int  `json:"default_port" mapstructure:"default_port"`
 	MaxMemoryMB      int  `json:"max_memory_mb" mapstructure:"max_memory_mb"`
 	RestartOnFailure bool `json:"restart_on_failure" mapstructure:"restart_on_failure"`
+}
+
+// RemoteAccessConfig contains remote access settings
+type RemoteAccessConfig struct {
+	RemoteServer   string `json:"remote_server" mapstructure:"remote_server"`
+	Username       string `json:"username" mapstructure:"username"`
+	PrivateKey     string `json:"private_key" mapstructure:"private_key"`
+	PublicKey      string `json:"public_key" mapstructure:"public_key"`
+	KeyGenerated   bool   `json:"key_generated" mapstructure:"key_generated"`
 }
 
 // InstalledServer represents a server that has been installed (Docker image pulled)
@@ -113,10 +125,17 @@ func NewConfigManager() (*ConfigManager, error) {
 	v.SetDefault("app.auto_refresh", true)
 	v.SetDefault("app.refresh_interval", 5)
 	v.SetDefault("app.check_for_updates", true)
+	v.SetDefault("app.startup_page", "dashboard")
+	v.SetDefault("app.auto_start", false)
 	v.SetDefault("server_defaults.auto_start", false)
 	v.SetDefault("server_defaults.default_port", 8000)
 	v.SetDefault("server_defaults.max_memory_mb", 512)
 	v.SetDefault("server_defaults.restart_on_failure", true)
+	v.SetDefault("remote_access.remote_server", "remote.neobelt.io")
+	v.SetDefault("remote_access.username", "")
+	v.SetDefault("remote_access.private_key", "")
+	v.SetDefault("remote_access.public_key", "")
+	v.SetDefault("remote_access.key_generated", false)
 	v.SetDefault("registries", []Registry{})
 	v.SetDefault("installed_servers", []InstalledServer{})
 	v.SetDefault("configured_servers", []ConfiguredServer{})
@@ -164,6 +183,7 @@ func (cm *ConfigManager) Save() error {
 	if cm.config != nil {
 		cm.viper.Set("app", cm.config.App)
 		cm.viper.Set("server_defaults", cm.config.ServerDefaults)
+		cm.viper.Set("remote_access", cm.config.RemoteAccess)
 		cm.viper.Set("registries", cm.config.Registries)
 		cm.viper.Set("installed_servers", cm.config.InstalledServers)
 		cm.viper.Set("configured_servers", cm.config.ConfiguredServers)

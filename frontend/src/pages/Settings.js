@@ -5,9 +5,6 @@ export class Settings {
         this.settings = {
             general: {
                 autoStart: true,
-                minimizeToTray: false,
-                checkUpdates: true,
-                enableNotifications: true,
                 startupPage: 'dashboard'
             },
             claude: {
@@ -22,17 +19,31 @@ export class Settings {
                 maxMemory: 512,
                 restartOnFailure: true
             },
+            remoteAccess: {
+                remoteServer: 'remote.neobelt.io',
+                username: '',
+                privateKey: '',
+                publicKey: '',
+                keyGenerated: false
+            },
             advanced: {
                 debugMode: false,
-                logRetention: 30,
-                customRegistries: []
+                logRetention: 30
             }
         };
         this.originalSettings = null;
     }
 
-    async loadServerDefaults() {
+    async loadSettings() {
         try {
+            // Load general app settings
+            const appConfig = await window.go.main.App.GetAppConfig();
+            this.settings.general = {
+                autoStart: appConfig.auto_start || false,
+                startupPage: appConfig.startup_page || 'dashboard'
+            };
+
+            // Load server defaults
             const serverDefaults = await window.go.main.App.GetServerDefaults();
             this.settings.servers = {
                 autoStart: serverDefaults.auto_start || false,
@@ -40,14 +51,32 @@ export class Settings {
                 maxMemory: serverDefaults.max_memory_mb || 512,
                 restartOnFailure: serverDefaults.restart_on_failure !== undefined ? serverDefaults.restart_on_failure : true
             };
+            
+            // Load remote access settings
+            const remoteAccess = await window.go.main.App.GetRemoteAccess();
+            this.settings.remoteAccess = {
+                remoteServer: remoteAccess.remote_server || 'remote.neobelt.io',
+                username: remoteAccess.username || '',
+                privateKey: remoteAccess.private_key || '',
+                publicKey: remoteAccess.public_key || '',
+                keyGenerated: remoteAccess.key_generated || false
+            };
+            
             this.originalSettings = JSON.parse(JSON.stringify(this.settings));
         } catch (error) {
-            console.error('Failed to load server defaults:', error);
+            console.error('Failed to load settings:', error);
         }
     }
 
     updateUI() {
-        // Update form fields with loaded settings
+        // Update general settings fields
+        const generalAutoStartField = document.getElementById('generalAutoStart');
+        const generalStartupPageField = document.getElementById('generalStartupPage');
+
+        if (generalAutoStartField) generalAutoStartField.checked = this.settings.general.autoStart;
+        if (generalStartupPageField) generalStartupPageField.value = this.settings.general.startupPage;
+
+        // Update server settings fields
         const autoStartField = document.getElementById('autoStart');
         const defaultPortField = document.getElementById('defaultPort');
         const maxMemoryField = document.getElementById('maxMemory');
@@ -57,6 +86,17 @@ export class Settings {
         if (defaultPortField) defaultPortField.value = this.settings.servers.defaultPort;
         if (maxMemoryField) maxMemoryField.value = this.settings.servers.maxMemory;
         if (restartOnFailureField) restartOnFailureField.checked = this.settings.servers.restartOnFailure;
+        
+        // Update remote access fields
+        const remoteServerField = document.getElementById('remoteServer');
+        const remoteUsernameField = document.getElementById('remoteUsername');
+        const privateKeyField = document.getElementById('privateKeyDisplay');
+        const publicKeyField = document.getElementById('publicKeyDisplay');
+
+        if (remoteServerField) remoteServerField.value = this.settings.remoteAccess.remoteServer;
+        if (remoteUsernameField) remoteUsernameField.value = this.settings.remoteAccess.username;
+        if (privateKeyField) privateKeyField.value = this.settings.remoteAccess.privateKey ? '••••••••••••••••••••' : '';
+        if (publicKeyField) publicKeyField.value = this.settings.remoteAccess.publicKey;
     }
 
     render() {
@@ -114,6 +154,15 @@ export class Settings {
                                 </div>
                             </a>
                             
+                            <a href="#" class="settings-nav-link block px-3 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-md" data-section="remote-access">
+                                <div class="flex items-center">
+                                    <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"></path>
+                                    </svg>
+                                    Remote Access
+                                </div>
+                            </a>
+                            
                             <a href="#" class="settings-nav-link block px-3 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-md" data-section="advanced">
                                 <div class="flex items-center">
                                     <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -144,7 +193,7 @@ export class Settings {
                                                 <p class="text-sm text-gray-500">Launch Neobelt when your computer starts</p>
                                             </div>
                                             <label class="relative inline-flex items-center cursor-pointer">
-                                                <input type="checkbox" class="sr-only peer" ${this.settings.general.autoStart ? 'checked' : ''}>
+                                                <input id="generalAutoStart" type="checkbox" class="sr-only peer" ${this.settings.general.autoStart ? 'checked' : ''}>
                                                 <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
                                             </label>
                                         </div>
@@ -152,7 +201,7 @@ export class Settings {
                                         <div>
                                             <label class="block text-sm font-medium text-gray-700 mb-2">Default startup page</label>
                                             <div class="relative">
-                                                <select class="w-full px-3 py-2 pr-8 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500 focus:border-primary-500 bg-white appearance-none cursor-pointer">
+                                                <select id="generalStartupPage" class="w-full px-3 py-2 pr-8 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500 focus:border-primary-500 bg-white appearance-none cursor-pointer">
                                                     <option value="dashboard" ${this.settings.general.startupPage === 'dashboard' ? 'selected' : ''}>Dashboard</option>
                                                     <option value="servers" ${this.settings.general.startupPage === 'servers' ? 'selected' : ''}>Servers</option>
                                                     <option value="registry" ${this.settings.general.startupPage === 'registry' ? 'selected' : ''}>Registry</option>
@@ -167,39 +216,6 @@ export class Settings {
                                     </div>
                                 </div>
 
-                                <!-- Update Settings -->
-                                <div class="bg-white border border-gray-200 rounded-lg p-6">
-                                    <h3 class="text-md font-medium text-gray-900 mb-4">Updates & Notifications</h3>
-                                    <div class="space-y-4">
-                                        <div class="flex items-center justify-between">
-                                            <div>
-                                                <label class="text-sm font-medium text-gray-700">Check for updates automatically</label>
-                                                <p class="text-sm text-gray-500">Get notified when new versions are available</p>
-                                            </div>
-                                            <label class="relative inline-flex items-center cursor-pointer">
-                                                <input type="checkbox" class="sr-only peer" ${this.settings.general.checkUpdates ? 'checked' : ''}>
-                                                <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
-                                            </label>
-                                        </div>
-
-                                        <div class="flex items-center justify-between">
-                                            <div>
-                                                <label class="text-sm font-medium text-gray-700">Enable notifications</label>
-                                                <p class="text-sm text-gray-500">Show system notifications for server events</p>
-                                            </div>
-                                            <label class="relative inline-flex items-center cursor-pointer">
-                                                <input type="checkbox" class="sr-only peer" ${this.settings.general.enableNotifications ? 'checked' : ''}>
-                                                <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
-                                            </label>
-                                        </div>
-
-                                        <div class="pt-4 border-t border-gray-200">
-                                            <button id="check-updates-btn" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500">
-                                                Check for Updates Now
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
                             </div>
                         </div>
 
@@ -342,6 +358,11 @@ export class Settings {
                             </div>
                         </div>
 
+                        <!-- Remote Access Settings -->
+                        <div id="remote-access-settings" class="settings-section hidden">
+                            ${this.renderRemoteAccessContent()}
+                        </div>
+
                         <!-- Advanced Settings -->
                         <div id="advanced-settings" class="settings-section hidden">
                             <div class="space-y-6">
@@ -407,8 +428,8 @@ export class Settings {
     }
 
     attachEventListeners() {
-        // Load server defaults and update UI
-        this.loadServerDefaults().then(() => {
+        // Load settings and update UI
+        this.loadSettings().then(() => {
             this.updateUI();
         });
 
@@ -447,10 +468,6 @@ export class Settings {
     }
 
     attachActionButtons() {
-        // General settings buttons
-        document.getElementById('check-updates-btn')?.addEventListener('click', () => {
-            this.checkForUpdates();
-        });
 
         // Claude settings buttons
         document.getElementById('detect-claude-btn')?.addEventListener('click', () => {
@@ -485,6 +502,19 @@ export class Settings {
         document.getElementById('import-config-btn')?.addEventListener('click', () => {
             this.importConfiguration();
         });
+
+        // Remote Access buttons
+        document.getElementById('generate-ssh-keys-btn')?.addEventListener('click', () => {
+            this.generateSSHKeys();
+        });
+
+        document.getElementById('copy-public-key-btn')?.addEventListener('click', () => {
+            this.copyPublicKey();
+        });
+
+        document.getElementById('test-remote-connection-btn')?.addEventListener('click', () => {
+            this.testRemoteConnection();
+        });
     }
 
     showSection(sectionName) {
@@ -503,6 +533,20 @@ export class Settings {
         console.log('Saving settings...');
         
         try {
+            // Collect General app values from the form
+            const generalAutoStart = document.getElementById('generalAutoStart')?.checked || false;
+            const startupPage = document.getElementById('generalStartupPage')?.value || 'dashboard';
+
+            const appConfig = {
+                version: "1.0.0", // Keep current version
+                theme: "light", // Keep default theme for now
+                auto_refresh: true, // Keep default
+                refresh_interval: 5, // Keep default
+                check_for_updates: true, // Keep default
+                startup_page: startupPage,
+                auto_start: generalAutoStart
+            };
+
             // Collect Server Defaults values from the form
             const autoStart = document.getElementById('autoStart')?.checked || false;
             const defaultPort = parseInt(document.getElementById('defaultPort')?.value) || 8000;
@@ -516,15 +560,42 @@ export class Settings {
                 restart_on_failure: restartOnFailure
             };
 
+            // Collect Remote Access values from the form
+            const remoteServer = document.getElementById('remoteServer')?.value || 'remote.neobelt.io';
+            const remoteUsername = document.getElementById('remoteUsername')?.value || '';
+
+            const remoteAccessConfig = {
+                remote_server: remoteServer,
+                username: remoteUsername,
+                private_key: this.settings.remoteAccess.privateKey,
+                public_key: this.settings.remoteAccess.publicKey,
+                key_generated: this.settings.remoteAccess.keyGenerated
+            };
+
             // Save to backend
+            await window.go.main.App.UpdateAppConfig(appConfig);
             await window.go.main.App.UpdateServerDefaults(serverDefaults);
+            await window.go.main.App.UpdateRemoteAccess(remoteAccessConfig);
 
             // Update local settings
+            this.settings.general = {
+                autoStart: generalAutoStart,
+                startupPage: startupPage
+            };
+
             this.settings.servers = {
                 autoStart,
                 defaultPort,
                 maxMemory,
                 restartOnFailure
+            };
+            
+            this.settings.remoteAccess = {
+                remoteServer,
+                username: remoteUsername,
+                privateKey: this.settings.remoteAccess.privateKey,
+                publicKey: this.settings.remoteAccess.publicKey,
+                keyGenerated: this.settings.remoteAccess.keyGenerated
             };
 
             const content = `
@@ -617,6 +688,16 @@ export class Settings {
                 Modal.hide();
                 try {
                     // Reset to default values
+                    const defaultAppConfig = {
+                        version: "1.0.0",
+                        theme: "light",
+                        auto_refresh: true,
+                        refresh_interval: 5,
+                        check_for_updates: true,
+                        startup_page: "dashboard",
+                        auto_start: false
+                    };
+
                     const defaultServerDefaults = {
                         auto_start: false,
                         default_port: 8000,
@@ -624,20 +705,55 @@ export class Settings {
                         restart_on_failure: true
                     };
 
+                    const defaultRemoteAccess = {
+                        remote_server: 'remote.neobelt.io',
+                        username: '',
+                        private_key: '',
+                        public_key: '',
+                        key_generated: false
+                    };
+
+                    await window.go.main.App.UpdateAppConfig(defaultAppConfig);
                     await window.go.main.App.UpdateServerDefaults(defaultServerDefaults);
+                    await window.go.main.App.UpdateRemoteAccess(defaultRemoteAccess);
                     
-                    // Update the UI
+                    // Update the UI - General settings
+                    document.getElementById('generalAutoStart').checked = false;
+                    document.getElementById('generalStartupPage').value = 'dashboard';
+                    
+                    // Update the UI - Server settings
                     document.getElementById('autoStart').checked = false;
                     document.getElementById('defaultPort').value = '8000';
                     document.getElementById('maxMemory').value = '512';
                     document.getElementById('restartOnFailure').checked = true;
+                    
+                    // Reset Remote Access settings
+                    document.getElementById('remoteServer').value = 'remote.neobelt.io';
+                    document.getElementById('remoteUsername').value = '';
+                    const privateKeyField = document.getElementById('privateKeyDisplay');
+                    const publicKeyField = document.getElementById('publicKeyDisplay');
+                    if (privateKeyField) privateKeyField.value = '';
+                    if (publicKeyField) publicKeyField.value = '';
 
                     // Update local settings
+                    this.settings.general = {
+                        autoStart: false,
+                        startupPage: 'dashboard'
+                    };
+
                     this.settings.servers = {
                         autoStart: false,
                         defaultPort: 8000,
                         maxMemory: 512,
                         restartOnFailure: true
+                    };
+                    
+                    this.settings.remoteAccess = {
+                        remoteServer: 'remote.neobelt.io',
+                        username: '',
+                        privateKey: '',
+                        publicKey: '',
+                        keyGenerated: false
                     };
 
                     const successContent = `
@@ -680,25 +796,6 @@ export class Settings {
         }, 100);
     }
 
-    checkForUpdates() {
-        const content = `
-            <div class="text-center space-y-4">
-                <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
-                    <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                    </svg>
-                </div>
-                <h3 class="text-lg font-semibold text-gray-900">Up to Date</h3>
-                <p class="text-gray-600 selectable-text">You're running the latest version of Neobelt (v1.0.0).</p>
-                <p class="text-sm text-gray-500">Last checked: Just now</p>
-            </div>
-        `;
-
-        Modal.show(content, {
-            title: 'Update Check',
-            size: 'sm'
-        });
-    }
 
     detectClaude() {
         console.log('Detecting Claude Desktop...');
@@ -730,5 +827,260 @@ export class Settings {
 
     importConfiguration() {
         console.log('Importing configuration...');
+    }
+
+    async generateSSHKeys() {
+        console.log('Generating SSH keys...');
+        
+        const generateBtn = document.getElementById('generate-ssh-keys-btn');
+        const originalText = generateBtn ? generateBtn.textContent : '';
+        
+        try {
+            if (generateBtn) {
+                generateBtn.disabled = true;
+                generateBtn.textContent = 'Generating...';
+            }
+            
+            const keyPair = await window.go.main.App.GenerateSSHKeys();
+            
+            // Update local settings
+            this.settings.remoteAccess.privateKey = keyPair.private_key;
+            this.settings.remoteAccess.publicKey = keyPair.public_key;
+            this.settings.remoteAccess.keyGenerated = true;
+            
+            const content = `
+                <div class="text-center space-y-4">
+                    <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
+                        <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                        </svg>
+                    </div>
+                    <h3 class="text-lg font-semibold text-gray-900">SSH Keys Generated</h3>
+                    <p class="text-gray-600">Your SSH key pair has been generated successfully.</p>
+                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 mt-4">
+                        <p class="text-sm text-blue-800">
+                            <strong>Note:</strong> Copy your public key and add it to your remote server's authorized_keys file to enable authentication.
+                        </p>
+                    </div>
+                </div>
+            `;
+
+            Modal.show(content, {
+                title: 'SSH Keys Generated',
+                size: 'md'
+            });
+            
+            // Set the onClose callback to update the UI when modal is manually closed
+            Modal.onClose = () => {
+                this.updateRemoteAccessUI();
+                Modal.onClose = null; // Clear the callback after use
+            };
+            
+        } catch (error) {
+            console.error('Failed to generate SSH keys:', error);
+            
+            const content = `
+                <div class="text-center space-y-4">
+                    <div class="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto">
+                        <svg class="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </div>
+                    <h3 class="text-lg font-semibold text-gray-900">Generation Failed</h3>
+                    <p class="text-gray-600">Failed to generate SSH keys: ${error.message || 'Unknown error'}</p>
+                </div>
+            `;
+
+            Modal.show(content, {
+                title: 'Error',
+                size: 'sm'
+            });
+        } finally {
+            if (generateBtn) {
+                generateBtn.disabled = false;
+                generateBtn.textContent = originalText;
+            }
+        }
+    }
+
+    async copyPublicKey() {
+        const publicKeyField = document.getElementById('publicKeyDisplay');
+        if (!publicKeyField || !publicKeyField.value) {
+            return;
+        }
+        
+        try {
+            await navigator.clipboard.writeText(publicKeyField.value.trim());
+            
+            const copyBtn = document.getElementById('copy-public-key-btn');
+            const originalContent = copyBtn?.innerHTML;
+            
+            if (copyBtn) {
+                copyBtn.innerHTML = `
+                    <svg class="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                    </svg>
+                `;
+                
+                setTimeout(() => {
+                    copyBtn.innerHTML = originalContent;
+                }, 2000);
+            }
+        } catch (error) {
+            console.error('Failed to copy public key:', error);
+        }
+    }
+
+    testRemoteConnection() {
+        console.log('Testing remote connection...');
+        
+        const content = `
+            <div class="text-center space-y-4">
+                <div class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto">
+                    <svg class="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900">Connection Test</h3>
+                <p class="text-gray-600">Remote connection testing will be implemented in a future update.</p>
+            </div>
+        `;
+
+        Modal.show(content, {
+            title: 'Coming Soon',
+            size: 'sm'
+        });
+    }
+
+    renderRemoteAccessContent() {
+        return `
+            <div class="space-y-6">
+                <div>
+                    <h2 class="text-lg font-semibold text-gray-900 mb-4">Remote Access</h2>
+                </div>
+
+                <!-- Remote Server Configuration -->
+                <div class="bg-white border border-gray-200 rounded-lg p-6">
+                    <h3 class="text-md font-medium text-gray-900 mb-4">Remote Server</h3>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Remote Server</label>
+                            <input id="remoteServer" type="text" value="${this.settings.remoteAccess.remoteServer}" placeholder="remote.neobelt.io" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Username</label>
+                            <input id="remoteUsername" type="text" value="${this.settings.remoteAccess.username}" placeholder="Enter username" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Authentication -->
+                <div class="bg-white border border-gray-200 rounded-lg p-6">
+                    <h3 class="text-md font-medium text-gray-900 mb-4">Authentication</h3>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Private Authentication Key</label>
+                            <div class="flex space-x-3">
+                                <input id="privateKeyDisplay" type="password" value="${this.settings.remoteAccess.privateKey ? '••••••••••••••••••••' : ''}" readonly class="flex-1 px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-500">
+                                ${this.settings.remoteAccess.keyGenerated ? 
+                                    `<button id="generate-ssh-keys-btn" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+                                        Roll Key
+                                    </button>` :
+                                    `<button id="generate-ssh-keys-btn" class="px-4 py-2 text-sm font-medium text-white bg-primary-600 border border-transparent rounded-md hover:bg-primary-700">
+                                        Generate
+                                    </button>`
+                                }
+                            </div>
+                            ${this.settings.remoteAccess.keyGenerated ? 
+                                `<div class="mt-2 flex items-center text-sm text-green-600">
+                                    <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                                    </svg>
+                                    SSH key pair generated successfully
+                                </div>` : ''
+                            }
+                        </div>
+                        
+                        ${this.settings.remoteAccess.keyGenerated ? 
+                            `<div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Public Key</label>
+                                <div class="flex space-x-2">
+                                    <textarea id="publicKeyDisplay" readonly class="flex-1 px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-500 font-mono text-xs h-20 resize-none">${this.settings.remoteAccess.publicKey}</textarea>
+                                    <button id="copy-public-key-btn" class="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 self-start">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                                        </svg>
+                                    </button>
+                                </div>
+                                <p class="mt-2 text-sm text-gray-500">Copy this public key to your remote server's authorized_keys file</p>
+                            </div>` : ''
+                        }
+                    </div>
+                </div>
+
+                <!-- Connection Status -->
+                <div class="bg-white border border-gray-200 rounded-lg p-6">
+                    <h3 class="text-md font-medium text-gray-900 mb-4">Connection</h3>
+                    <div class="space-y-4">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <label class="text-sm font-medium text-gray-700">Connection Status</label>
+                                <p class="text-sm text-gray-500">Test connection to remote server</p>
+                            </div>
+                            <div class="flex items-center space-x-2">
+                                <span class="px-2 py-1 text-xs font-medium text-gray-600 bg-gray-100 rounded-full">Not Connected</span>
+                                <button id="test-remote-connection-btn" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+                                    Test Connection
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    updateRemoteAccessUI() {
+        // Re-render the remote access section with updated data
+        const remoteAccessSection = document.getElementById('remote-access-settings');
+        if (!remoteAccessSection) return;
+
+        // Update the section content using the shared render method
+        remoteAccessSection.innerHTML = this.renderRemoteAccessContent();
+
+        // Re-attach event listeners for the new buttons
+        this.attachRemoteAccessEventListeners();
+
+        // Ensure the remote access section stays visible and nav stays active
+        this.showSection('remote-access');
+        
+        // Update navigation to show Remote Access as active
+        const navLinks = document.querySelectorAll('.settings-nav-link');
+        navLinks.forEach(l => {
+            l.classList.remove('text-primary-700', 'bg-primary-50');
+            l.classList.add('text-gray-600', 'hover:text-gray-900', 'hover:bg-gray-50');
+        });
+        
+        const remoteAccessNavLink = document.querySelector('.settings-nav-link[data-section="remote-access"]');
+        if (remoteAccessNavLink) {
+            remoteAccessNavLink.classList.remove('text-gray-600', 'hover:text-gray-900', 'hover:bg-gray-50');
+            remoteAccessNavLink.classList.add('text-primary-700', 'bg-primary-50');
+        }
+    }
+
+    attachRemoteAccessEventListeners() {
+        // Re-attach event listeners specifically for remote access buttons
+        document.getElementById('generate-ssh-keys-btn')?.addEventListener('click', () => {
+            this.generateSSHKeys();
+        });
+
+        document.getElementById('copy-public-key-btn')?.addEventListener('click', () => {
+            this.copyPublicKey();
+        });
+
+        document.getElementById('test-remote-connection-btn')?.addEventListener('click', () => {
+            this.testRemoteConnection();
+        });
     }
 }
