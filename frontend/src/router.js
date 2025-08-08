@@ -3,6 +3,7 @@ class Router {
         this.routes = {};
         this.currentRoute = '';
         this.initialized = false;
+        this.defaultRoute = 'dashboard'; // Will be updated from app settings
     }
 
     init() {
@@ -22,27 +23,31 @@ class Router {
     }
 
     handleRouteChange() {
-        const hash = window.location.hash.slice(1) || 'dashboard';
+        const hash = window.location.hash.slice(1) || this.defaultRoute;
         
         if (this.routes[hash]) {
             this.currentRoute = hash;
             this.routes[hash]();
-        } else if (hash !== 'dashboard') {
-            // Route doesn't exist and we're not already trying dashboard, redirect to dashboard
-            this.currentRoute = 'dashboard';
-            window.location.hash = 'dashboard';
+        } else if (hash !== this.defaultRoute) {
+            // Route doesn't exist and we're not already trying default route, redirect to default
+            this.currentRoute = this.defaultRoute;
+            window.location.hash = this.defaultRoute;
         } else {
-            // We're trying to go to dashboard but no route handler exists yet
+            // We're trying to go to default route but no route handler exists yet
             // This can happen during initialization - set route and try again after a short delay
-            this.currentRoute = 'dashboard';
-            if (this.routes['dashboard']) {
-                this.routes['dashboard']();
+            this.currentRoute = this.defaultRoute;
+            if (this.routes[this.defaultRoute]) {
+                this.routes[this.defaultRoute]();
             }
         }
     }
 
     getCurrentRoute() {
         return this.currentRoute;
+    }
+
+    setDefaultRoute(route) {
+        this.defaultRoute = route;
     }
 }
 

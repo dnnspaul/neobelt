@@ -205,6 +205,8 @@ export class Settings {
                                                     <option value="dashboard" ${this.settings.general.startupPage === 'dashboard' ? 'selected' : ''}>Dashboard</option>
                                                     <option value="servers" ${this.settings.general.startupPage === 'servers' ? 'selected' : ''}>Servers</option>
                                                     <option value="registry" ${this.settings.general.startupPage === 'registry' ? 'selected' : ''}>Registry</option>
+                                                    <option value="settings" ${this.settings.general.startupPage === 'settings' ? 'selected' : ''}>Settings</option>
+                                                    <option value="help" ${this.settings.general.startupPage === 'help' ? 'selected' : ''}>Help</option>
                                                 </select>
                                                 <div class="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
                                                     <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -505,7 +507,7 @@ export class Settings {
 
         // Remote Access buttons
         document.getElementById('generate-ssh-keys-btn')?.addEventListener('click', () => {
-            this.generateSSHKeys();
+            this.handleGenerateSSHKeysClick();
         });
 
         document.getElementById('copy-public-key-btn')?.addEventListener('click', () => {
@@ -531,6 +533,9 @@ export class Settings {
 
     async saveSettings() {
         console.log('Saving settings...');
+        
+        // Set button to loading state
+        this.setSaveButtonLoading(true);
         
         try {
             // Collect General app values from the form
@@ -574,7 +579,7 @@ export class Settings {
 
             // Save to backend
             await window.go.main.App.UpdateAppConfig(appConfig);
-            await window.go.main.App.UpdateServerDefaults(serverDefaults);
+            const containersRecreated = await window.go.main.App.UpdateServerDefaults(serverDefaults);
             await window.go.main.App.UpdateRemoteAccess(remoteAccessConfig);
 
             // Update local settings
@@ -597,29 +602,6 @@ export class Settings {
                 publicKey: this.settings.remoteAccess.publicKey,
                 keyGenerated: this.settings.remoteAccess.keyGenerated
             };
-
-            const content = `
-                <div class="text-center space-y-4">
-                    <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
-                        <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                        </svg>
-                    </div>
-                    <h3 class="text-lg font-semibold text-gray-900">Settings Saved</h3>
-                    <p class="text-gray-600">Your server defaults have been saved successfully.</p>
-                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 mt-4">
-                        <p class="text-sm text-blue-800">
-                            <strong>Note:</strong> Running containers will be automatically recreated to apply the new settings 
-                            (memory limits, restart policies, and port changes). This may cause a brief interruption in service.
-                        </p>
-                    </div>
-                </div>
-            `;
-
-            Modal.show(content, {
-                title: 'Settings Saved',
-                size: 'md'
-            });
         } catch (error) {
             console.error('Failed to save settings:', error);
             
@@ -639,6 +621,39 @@ export class Settings {
                 title: 'Error',
                 size: 'sm'
             });
+        } finally {
+            // Always revert button state
+            this.setSaveButtonLoading(false);
+        }
+    }
+
+    setSaveButtonLoading(isLoading) {
+        const saveBtn = document.getElementById('save-settings-btn');
+        if (!saveBtn) return;
+
+        if (isLoading) {
+            // Store original content
+            saveBtn.dataset.originalText = saveBtn.innerHTML;
+            
+            // Set loading state
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = `
+                <div class="flex items-center justify-center space-x-2">
+                    <svg class="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <span>Saving...</span>
+                </div>
+            `;
+            
+            // Add visual feedback by slightly reducing opacity
+            saveBtn.classList.add('opacity-90');
+        } else {
+            // Restore original state
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = saveBtn.dataset.originalText || 'Save Changes';
+            saveBtn.classList.remove('opacity-90');
         }
     }
 
@@ -827,6 +842,74 @@ export class Settings {
 
     importConfiguration() {
         console.log('Importing configuration...');
+    }
+
+    handleGenerateSSHKeysClick() {
+        // Check if keys already exist (rolling keys)
+        if (this.settings.remoteAccess.keyGenerated && this.settings.remoteAccess.privateKey) {
+            this.showKeyRollConfirmation();
+        } else {
+            // First time generating keys - no confirmation needed
+            this.generateSSHKeys();
+        }
+    }
+
+    showKeyRollConfirmation() {
+        const content = `
+            <div class="space-y-6">
+                <div class="text-center">
+                    <div class="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <svg class="w-8 h-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.728-.833-2.498 0L4.316 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
+                        </svg>
+                    </div>
+                    <h3 class="text-lg font-semibold text-gray-900">Replace SSH Key?</h3>
+                    <p class="text-gray-600 mt-2">
+                        Rolling your SSH key will generate a completely new key pair. This will likely cause you to lose access to the remote server until you resubmit the new public key to the authority.
+                    </p>
+                </div>
+                
+                <div class="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                    <div class="flex items-start space-x-3">
+                        <svg class="w-5 h-5 text-amber-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.728-.833-2.498 0L4.316 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
+                        </svg>
+                        <div>
+                            <p class="text-sm font-medium text-amber-800">Before proceeding:</p>
+                            <ul class="text-sm text-amber-700 mt-1 space-y-1">
+                                <li>• Your current private key will be permanently replaced</li>
+                                <li>• You will need to copy and submit the new public key</li>
+                                <li>• Remote server access will be interrupted until key is updated</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex space-x-3 justify-end">
+                    <button id="cancel-roll-key" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+                        Cancel
+                    </button>
+                    <button id="confirm-roll-key" class="px-4 py-2 text-sm font-medium text-white bg-red-600 border border-transparent rounded-md hover:bg-red-700">
+                        Replace SSH Key
+                    </button>
+                </div>
+            </div>
+        `;
+
+        Modal.show(content, {
+            title: 'Replace SSH Key',
+            size: 'md'
+        });
+
+        // Add event listeners to modal buttons
+        document.getElementById('confirm-roll-key')?.addEventListener('click', () => {
+            Modal.hide();
+            this.generateSSHKeys();
+        });
+
+        document.getElementById('cancel-roll-key')?.addEventListener('click', () => {
+            Modal.hide();
+        });
     }
 
     async generateSSHKeys() {
@@ -1072,7 +1155,7 @@ export class Settings {
     attachRemoteAccessEventListeners() {
         // Re-attach event listeners specifically for remote access buttons
         document.getElementById('generate-ssh-keys-btn')?.addEventListener('click', () => {
-            this.generateSSHKeys();
+            this.handleGenerateSSHKeysClick();
         });
 
         document.getElementById('copy-public-key-btn')?.addEventListener('click', () => {

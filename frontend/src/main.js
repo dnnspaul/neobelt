@@ -6,6 +6,9 @@ import { Servers } from './pages/Servers.js';
 import { Registry } from './pages/Registry.js';
 import { Settings } from './pages/Settings.js';
 import { Help } from './pages/Help.js';
+import DockerStatusModal from './components/DockerStatusModal.js';
+import { EventsOn } from '../wailsjs/runtime/runtime.js';
+import { GetAppConfig } from '../wailsjs/go/main/App.js';
 
 class App {
     constructor() {
@@ -22,8 +25,10 @@ class App {
         this.init();
     }
 
-    init() {
+    async init() {
         this.setupRoutes();
+        this.setupDockerStatusListener();
+        await this.loadStartupPage();
         this.render();
         // Initialize router after routes are set up
         router.init();
@@ -35,6 +40,36 @@ class App {
         router.addRoute('registry', () => this.showPage('registry'));
         router.addRoute('settings', () => this.showPage('settings'));
         router.addRoute('help', () => this.showPage('help'));
+    }
+
+    setupDockerStatusListener() {
+        // Listen for Docker status updates from the backend
+        EventsOn('docker_status_update', (data) => {
+            console.log('Docker status update:', data);
+            if (data && data.type && data.status) {
+                DockerStatusModal.show(data.type, data.status);
+            }
+        });
+    }
+
+    async loadStartupPage() {
+        try {
+            const appConfig = await GetAppConfig();
+            const startupPage = appConfig.startup_page || 'dashboard';
+            
+            // Validate that the startup page is a valid route
+            const validRoutes = ['dashboard', 'servers', 'registry', 'settings', 'help'];
+            if (validRoutes.includes(startupPage)) {
+                router.setDefaultRoute(startupPage);
+            } else {
+                console.warn(`Invalid startup page '${startupPage}', using dashboard`);
+                router.setDefaultRoute('dashboard');
+            }
+        } catch (error) {
+            console.error('Failed to load startup page setting:', error);
+            // Fallback to dashboard if config loading fails
+            router.setDefaultRoute('dashboard');
+        }
     }
 
     render() {
@@ -92,7 +127,7 @@ class App {
 }
 
 // Initialize the application
-function initApp() {
+async function initApp() {
     try {
         new App();
     } catch (error) {

@@ -13,10 +13,12 @@ export class Modal {
             title = 'Modal',
             size = 'md',
             closeButton = true,
-            backdrop = true
+            backdrop = true,
+            closable = true
         } = options;
 
         this.isOpen = true;
+        this.closable = closable;
         
         const modalHTML = `
             <div id="modal-overlay" class="fixed inset-0 z-50 flex items-center justify-center">
@@ -78,8 +80,8 @@ export class Modal {
             this.eventListeners.push({ element: closeBtn, event: 'click', handler: clickHandler });
         }
 
-        // Background overlay click
-        if (overlay) {
+        // Background overlay click (only if closable)
+        if (overlay && this.closable) {
             const clickHandler = (e) => {
                 if (e.target === overlay || e.target.hasAttribute('data-backdrop')) {
                     this.hide();
@@ -89,14 +91,16 @@ export class Modal {
             this.eventListeners.push({ element: overlay, event: 'click', handler: clickHandler });
         }
 
-        // Escape key
-        const escapeHandler = (e) => {
-            if (e.key === 'Escape' && this.isOpen) {
-                this.hide();
-            }
-        };
-        document.addEventListener('keydown', escapeHandler);
-        this.eventListeners.push({ element: document, event: 'keydown', handler: escapeHandler });
+        // Escape key (only if closable)
+        if (this.closable) {
+            const escapeHandler = (e) => {
+                if (e.key === 'Escape' && this.isOpen) {
+                    this.hide();
+                }
+            };
+            document.addEventListener('keydown', escapeHandler);
+            this.eventListeners.push({ element: document, event: 'keydown', handler: escapeHandler });
+        }
 
         // Auto-detect and handle Cancel/Close buttons in content
         if (overlay) {

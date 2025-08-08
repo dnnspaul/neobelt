@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os/exec"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -680,4 +682,67 @@ func (ds *DockerService) CleanupOrphanedContainers(ctx context.Context, configur
 	}
 
 	return nil
+}
+
+// DockerStatus represents the current status of Docker
+type DockerStatus struct {
+	IsRunning             bool `json:"is_running"`
+	IsDockerDesktopInstalled bool `json:"is_docker_desktop_installed"`
+}
+
+// CheckDockerStatus checks if Docker daemon is running
+func (ds *DockerService) CheckDockerStatus(ctx context.Context) *DockerStatus {
+	status := &DockerStatus{
+		IsRunning:             false,
+		IsDockerDesktopInstalled: ds.IsDockerDesktopInstalled(),
+	}
+	
+	// Try to ping Docker daemon
+	if ds.client != nil {
+		_, err := ds.client.Ping(ctx)
+		status.IsRunning = err == nil
+	}
+	
+	return status
+}
+
+// IsDockerDesktopInstalled checks if Docker Desktop is installed on the system
+func (ds *DockerService) IsDockerDesktopInstalled() bool {
+	switch runtime.GOOS {
+	case "windows":
+		// Check if Docker Desktop executable exists
+		cmd := exec.Command("where", "Docker Desktop.exe")
+		err := cmd.Run()
+		return err == nil
+	case "darwin":
+		// Check if Docker Desktop app exists
+		cmd := exec.Command("test", "-d", "/Applications/Docker.app")
+		err := cmd.Run()
+		return err == nil
+	case "linux":
+		// On Linux, check for docker-desktop or docker-ce
+		cmd := exec.Command("which", "docker")
+		err := cmd.Run()
+		return err == nil
+	default:
+		return false
+	}
+}
+
+// StartDockerDesktop attempts to start Docker Desktop
+func (ds *DockerService) StartDockerDesktop() error {
+	switch runtime.GOOS {
+	case "windows":
+		cmd := exec.Command("cmd", "/c", "start", "", "Docker Desktop")
+		return cmd.Start()
+	case "darwin":
+		cmd := exec.Command("open", "-a", "Docker")
+		return cmd.Start()
+	case "linux":
+		// On Linux, systemctl might be used to start docker service
+		cmd := exec.Command("systemctl", "start", "docker")
+		return cmd.Run()
+	default:
+		return fmt.Errorf("unsupported operating system: %s", runtime.GOOS)
+	}
 }

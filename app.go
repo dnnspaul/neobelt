@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/emersion/go-autostart"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // min returns the minimum of two integers
@@ -28,6 +30,7 @@ type App struct {
 	ctx           context.Context
 	configManager *ConfigManager
 	dockerService *DockerService
+	dockerMonitor *DockerMonitor
 }
 
 // NewApp creates a new App application struct
@@ -60,6 +63,11 @@ func (a *App) startup(ctx context.Context) {
 		a.dockerService = dockerService
 		fmt.Println("Docker service initialized successfully")
 	}
+
+	// Initialize and start Docker monitor
+	a.dockerMonitor = NewDockerMonitor(a)
+	a.dockerMonitor.Start()
+	fmt.Println("Docker monitor started")
 }
 
 // Greet returns a greeting for the given name
@@ -327,26 +335,31 @@ func (a *App) GetServerDefaults() (*ServerDefaultsConfig, error) {
 	return &config.ServerDefaults, nil
 }
 
-// UpdateServerDefaults updates the server default settings
-func (a *App) UpdateServerDefaults(serverDefaults ServerDefaultsConfig) error {
+// UpdateServerDefaults updates the server default settings and returns whether containers were recreated
+func (a *App) UpdateServerDefaults(serverDefaults ServerDefaultsConfig) (bool, error) {
 	if a.configManager == nil {
-		return fmt.Errorf("configuration manager not available")
+		return false, fmt.Errorf("configuration manager not available")
 	}
 
 	config := a.configManager.GetConfig()
 	if config == nil {
-		return fmt.Errorf("no configuration available")
+		return false, fmt.Errorf("no configuration available")
 	}
 
-	// Check if port range changed and needs reallocation
-	oldDefaultPort := config.ServerDefaults.DefaultPort
-	portChanged := oldDefaultPort != serverDefaults.DefaultPort
+	// Check what settings have changed and need container recreation
+	oldDefaults := config.ServerDefaults
+	portChanged := oldDefaults.DefaultPort != serverDefaults.DefaultPort
+	memoryChanged := oldDefaults.MaxMemoryMB != serverDefaults.MaxMemoryMB
+	restartPolicyChanged := oldDefaults.RestartOnFailure != serverDefaults.RestartOnFailure
+	
+	// Only recreate containers if settings that affect them have changed
+	containerRecreationNeeded := memoryChanged || restartPolicyChanged || portChanged
 
 	config.ServerDefaults = serverDefaults
 
 	// Save configuration first
 	if err := a.configManager.Save(); err != nil {
-		return err
+		return false, err
 	}
 
 	// If port range changed, reallocate ports for existing servers
@@ -357,13 +370,29 @@ func (a *App) UpdateServerDefaults(serverDefaults ServerDefaultsConfig) error {
 		}
 	}
 
-	// Apply new memory limits and restart policies to existing containers
-	if err := a.applySettingsToExistingContainers(serverDefaults); err != nil {
-		fmt.Printf("Warning: Failed to apply some settings to existing containers: %v\n", err)
-		// Don't fail the settings update if container updates fail
+	// Apply new memory limits and restart policies to existing containers only if needed
+	if containerRecreationNeeded {
+		fmt.Printf("Container recreation needed due to changes in: ")
+		if memoryChanged {
+			fmt.Printf("memory limit (%d -> %d MB) ", oldDefaults.MaxMemoryMB, serverDefaults.MaxMemoryMB)
+		}
+		if restartPolicyChanged {
+			fmt.Printf("restart policy (%t -> %t) ", oldDefaults.RestartOnFailure, serverDefaults.RestartOnFailure)
+		}
+		if portChanged {
+			fmt.Printf("default port (%d -> %d) ", oldDefaults.DefaultPort, serverDefaults.DefaultPort)
+		}
+		fmt.Println()
+		
+		if err := a.applySettingsToExistingContainers(serverDefaults); err != nil {
+			fmt.Printf("Warning: Failed to apply some settings to existing containers: %v\n", err)
+			// Don't fail the settings update if container updates fail
+		}
+	} else {
+		fmt.Println("No container recreation needed - only AutoStart setting changed")
 	}
 
-	return nil
+	return containerRecreationNeeded, nil
 }
 
 // reallocatePorts reallocates ports for all configured servers starting from the new default port
@@ -1294,4 +1323,113 @@ func (a *App) GetSSHPublicKey() (string, error) {
 	}
 
 	return config.RemoteAccess.PublicKey, nil
+}
+
+// CheckDockerStatus checks the current status of Docker daemon and Docker Desktop installation
+func (a *App) CheckDockerStatus() (*DockerStatus, error) {
+	if a.dockerService == nil {
+		return &DockerStatus{
+			IsRunning:             false,
+			IsDockerDesktopInstalled: false,
+		}, nil
+	}
+	
+	return a.dockerService.CheckDockerStatus(a.ctx), nil
+}
+
+// StartDockerDesktop attempts to start Docker Desktop
+func (a *App) StartDockerDesktop() error {
+	if a.dockerService == nil {
+		return fmt.Errorf("docker service not available")
+	}
+	
+	return a.dockerService.StartDockerDesktop()
+}
+
+// OpenDockerDesktopDownloadURL opens the Docker Desktop download page
+func (a *App) OpenDockerDesktopDownloadURL() error {
+	// Import the runtime package for browser opening
+	return a.openURL("https://www.docker.com/products/docker-desktop/")
+}
+
+// openURL opens a URL in the default browser using Wails runtime
+func (a *App) openURL(url string) error {
+	runtime.BrowserOpenURL(a.ctx, url)
+	return nil
+}
+
+// DockerMonitor handles periodic Docker status checks
+type DockerMonitor struct {
+	app    *App
+	ticker *time.Ticker
+	done   chan bool
+}
+
+// NewDockerMonitor creates a new Docker monitor
+func NewDockerMonitor(app *App) *DockerMonitor {
+	return &DockerMonitor{
+		app:  app,
+		done: make(chan bool),
+	}
+}
+
+// Start begins the periodic Docker status monitoring (every 15 seconds)
+func (dm *DockerMonitor) Start() {
+	dm.ticker = time.NewTicker(15 * time.Second)
+	
+	// Check immediately on start
+	go dm.checkDockerStatus()
+	
+	// Then check every 15 seconds
+	go func() {
+		for {
+			select {
+			case <-dm.done:
+				return
+			case <-dm.ticker.C:
+				dm.checkDockerStatus()
+			}
+		}
+	}()
+}
+
+// Stop stops the Docker monitoring
+func (dm *DockerMonitor) Stop() {
+	if dm.ticker != nil {
+		dm.ticker.Stop()
+	}
+	dm.done <- true
+}
+
+// checkDockerStatus performs the actual Docker status check and handles the results
+func (dm *DockerMonitor) checkDockerStatus() {
+	status, err := dm.app.CheckDockerStatus()
+	if err != nil {
+		log.Printf("[ERROR] Failed to check Docker status: %v", err)
+		return
+	}
+	
+	if !status.IsDockerDesktopInstalled {
+		// Docker Desktop is not installed - emit event to show modal
+		dm.emitDockerStatusEvent("docker_not_installed", status)
+		return
+	}
+	
+	if !status.IsRunning {
+		// Docker is installed but not running - show modal to ask user to start it
+		log.Println("[INFO] Docker is not running, showing modal to user...")
+		dm.emitDockerStatusEvent("docker_not_running", status)
+		return
+	}
+	
+	// Docker is running - emit success event
+	dm.emitDockerStatusEvent("docker_running", status)
+}
+
+// emitDockerStatusEvent sends Docker status events to the frontend
+func (dm *DockerMonitor) emitDockerStatusEvent(eventType string, status *DockerStatus) {
+	runtime.EventsEmit(dm.app.ctx, "docker_status_update", map[string]interface{}{
+		"type":   eventType,
+		"status": status,
+	})
 }
