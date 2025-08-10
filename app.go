@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -46,28 +45,48 @@ func (a *App) startup(ctx context.Context) {
 	// Initialize configuration manager
 	configManager, err := NewConfigManager()
 	if err != nil {
-		fmt.Printf("Failed to initialize configuration manager: %v\n", err)
+		LogError("Failed to initialize configuration manager: %v", err)
 		// Continue with default behavior if config fails
 		return
 	}
 
 	a.configManager = configManager
-	fmt.Printf("Configuration loaded from: %s\n", configManager.GetConfigPath())
+	LogInfo("Configuration loaded from: %s", configManager.GetConfigPath())
+
+	// Initialize logger
+	config := configManager.GetConfig()
+	debugMode := false
+	logRetention := 30
+	if config != nil {
+		debugMode = config.App.DebugMode
+		logRetention = config.App.LogRetention
+	}
+	
+	logDir := configManager.GetLogDir()
+	if err := InitLogger(logDir, debugMode); err != nil {
+		fmt.Printf("Warning: Failed to initialize logger: %v\n", err) // Keep as fmt since logger isn't initialized yet
+	} else {
+		LogInfo("Logger initialized successfully")
+		// Clean up old logs
+		if err := CleanupOldLogs(logDir, logRetention); err != nil {
+			LogWarning("Failed to cleanup old logs: %v", err)
+		}
+	}
 
 	// Initialize Docker service
 	dockerService, err := NewDockerService()
 	if err != nil {
-		fmt.Printf("Warning: Failed to initialize Docker service: %v\n", err)
+		LogWarning("Failed to initialize Docker service: %v", err)
 		// Continue without Docker functionality
 	} else {
 		a.dockerService = dockerService
-		fmt.Println("Docker service initialized successfully")
+		LogInfo("Docker service initialized successfully")
 	}
 
 	// Initialize and start Docker monitor
 	a.dockerMonitor = NewDockerMonitor(a)
 	a.dockerMonitor.Start()
-	fmt.Println("Docker monitor started")
+	LogInfo("Docker monitor started")
 }
 
 // Greet returns a greeting for the given name
@@ -240,7 +259,7 @@ func (a *App) FetchAllRegistries() ([]RegistryServer, error) {
 		servers, err := a.fetchRegistryFromURLWithAuth(registry.URL, registry)
 		if err != nil {
 			// Log the error but continue with other registries
-			fmt.Printf("Warning: Failed to fetch from registry %s: %v\n", registry.Name, err)
+			LogWarning("Failed to fetch from registry %s: %v", registry.Name, err)
 			continue
 		}
 
@@ -365,31 +384,31 @@ func (a *App) UpdateServerDefaults(serverDefaults ServerDefaultsConfig) (bool, e
 	// If port range changed, reallocate ports for existing servers
 	if portChanged {
 		if err := a.reallocatePorts(serverDefaults.DefaultPort); err != nil {
-			fmt.Printf("Warning: Failed to reallocate ports: %v\n", err)
+			LogWarning("Failed to reallocate ports: %v", err)
 			// Don't fail the settings update if port reallocation fails
 		}
 	}
 
 	// Apply new memory limits and restart policies to existing containers only if needed
 	if containerRecreationNeeded {
-		fmt.Printf("Container recreation needed due to changes in: ")
+		logMessage := "Container recreation needed due to changes in:"
 		if memoryChanged {
-			fmt.Printf("memory limit (%d -> %d MB) ", oldDefaults.MaxMemoryMB, serverDefaults.MaxMemoryMB)
+			logMessage += fmt.Sprintf(" memory limit (%d -> %d MB)", oldDefaults.MaxMemoryMB, serverDefaults.MaxMemoryMB)
 		}
 		if restartPolicyChanged {
-			fmt.Printf("restart policy (%t -> %t) ", oldDefaults.RestartOnFailure, serverDefaults.RestartOnFailure)
+			logMessage += fmt.Sprintf(" restart policy (%t -> %t)", oldDefaults.RestartOnFailure, serverDefaults.RestartOnFailure)
 		}
 		if portChanged {
-			fmt.Printf("default port (%d -> %d) ", oldDefaults.DefaultPort, serverDefaults.DefaultPort)
+			logMessage += fmt.Sprintf(" default port (%d -> %d)", oldDefaults.DefaultPort, serverDefaults.DefaultPort)
 		}
-		fmt.Println()
+		LogInfo(logMessage)
 		
 		if err := a.applySettingsToExistingContainers(serverDefaults); err != nil {
-			fmt.Printf("Warning: Failed to apply some settings to existing containers: %v\n", err)
+			LogWarning("Failed to apply some settings to existing containers: %v", err)
 			// Don't fail the settings update if container updates fail
 		}
 	} else {
-		fmt.Println("No container recreation needed - only AutoStart setting changed")
+		LogInfo("No container recreation needed - only AutoStart setting changed")
 	}
 
 	return containerRecreationNeeded, nil
@@ -432,13 +451,13 @@ func (a *App) reallocatePorts(newDefaultPort int) error {
 		// Update the actual Docker container port mapping if it exists and is running
 		if a.dockerService != nil && server.ContainerID != "" {
 			if err := a.updateContainerPort(server.ContainerID, oldPort, nextPort); err != nil {
-				fmt.Printf("Warning: Failed to update container port for %s: %v\n", server.ContainerID, err)
+				LogWarning("Failed to update container port for %s: %v", server.ContainerID, err)
 				// Continue with other servers even if one fails
 			}
 		}
 
 		nextPort++
-		fmt.Printf("Reallocated port for server %s: %d -> %d\n", server.Name, oldPort, server.Port)
+		LogInfo("Reallocated port for server %s: %d -> %d", server.Name, oldPort, server.Port)
 	}
 
 	return nil
@@ -474,11 +493,11 @@ func (a *App) updateContainerPort(containerID string, oldPort, newPort int) erro
 
 	// Check if container is running - only recreate if it's running
 	if containerInfo.State != "running" {
-		fmt.Printf("Container %s is not running (%s), port change will apply on next start\n", containerID, containerInfo.State)
+		LogInfo("Container %s is not running (%s), port change will apply on next start", containerID, containerInfo.State)
 		return nil
 	}
 
-	fmt.Printf("Recreating container %s to change port mapping: %d -> %d\n", containerID, oldPort, newPort)
+	LogInfo("Recreating container %s to change port mapping: %d -> %d", containerID, oldPort, newPort)
 
 	// Get server defaults for recreation
 	serverDefaults, err := a.GetServerDefaults()
@@ -487,7 +506,7 @@ func (a *App) updateContainerPort(containerID string, oldPort, newPort int) erro
 	}
 
 	// Stop the container
-	fmt.Printf("Stopping container %s for port change...\n", containerID)
+	LogInfo("Stopping container %s for port change...", containerID)
 	if err := a.dockerService.StopContainer(a.ctx, containerID); err != nil {
 		return fmt.Errorf("failed to stop container: %w", err)
 	}
@@ -507,7 +526,7 @@ func (a *App) updateContainerPort(containerID string, oldPort, newPort int) erro
 	}
 
 	// Remove the old container
-	fmt.Printf("Removing old container %s...\n", containerID)
+	LogInfo("Removing old container %s...", containerID)
 	if err := a.dockerService.RemoveContainer(a.ctx, containerID, true); err != nil {
 		return fmt.Errorf("failed to remove old container: %w", err)
 	}
@@ -531,7 +550,7 @@ func (a *App) updateContainerPort(containerID string, oldPort, newPort int) erro
 		}(),
 	}
 
-	fmt.Printf("Creating new container with host port %d and container port %d\n", newPort, newConfig.ContainerPort)
+	LogInfo("Creating new container with host port %d and container port %d", newPort, newConfig.ContainerPort)
 
 	newContainerID, err := a.dockerService.CreateContainer(a.ctx, newConfig)
 	if err != nil {
@@ -541,16 +560,16 @@ func (a *App) updateContainerPort(containerID string, oldPort, newPort int) erro
 	// Update the configured server with the new container ID
 	configuredServer.ContainerID = newContainerID
 	if err := a.configManager.AddOrUpdateConfiguredServer(*configuredServer); err != nil {
-		fmt.Printf("Warning: Failed to update configured server with new container ID: %v\n", err)
+		LogWarning("Failed to update configured server with new container ID: %v", err)
 	}
 
 	// Start the new container
-	fmt.Printf("Starting new container %s with port %d...\n", newContainerID, newPort)
+	LogInfo("Starting new container %s with port %d...", newContainerID, newPort)
 	if err := a.dockerService.StartContainer(a.ctx, newContainerID); err != nil {
 		return fmt.Errorf("failed to start new container: %w", err)
 	}
 
-	fmt.Printf("Successfully recreated container with new port: %s -> %s (port %d -> %d)\n",
+	LogInfo("Successfully recreated container with new port: %s -> %s (port %d -> %d)",
 		containerID, newContainerID, oldPort, newPort)
 	return nil
 }
@@ -573,11 +592,11 @@ func (a *App) applySettingsToExistingContainers(serverDefaults ServerDefaultsCon
 
 		// Try to update container settings
 		if err := a.updateContainerSettings(server.ContainerID, serverDefaults); err != nil {
-			fmt.Printf("Warning: Failed to update settings for container %s (%s): %v\n",
+			LogWarning("Failed to update settings for container %s (%s): %v",
 				server.ContainerID, server.Name, err)
 			// Continue with other containers
 		} else {
-			fmt.Printf("Updated settings for container %s (%s)\n", server.ContainerID, server.Name)
+			LogInfo("Updated settings for container %s (%s)", server.ContainerID, server.Name)
 		}
 	}
 
@@ -610,14 +629,14 @@ func (a *App) updateContainerSettings(containerID string, serverDefaults ServerD
 
 	// Check if container is running - only recreate if it's running
 	if containerInfo.State != "running" {
-		fmt.Printf("Container %s is not running (%s), skipping recreation\n", containerID, containerInfo.State)
+		LogInfo("Container %s is not running (%s), skipping recreation", containerID, containerInfo.State)
 		return nil
 	}
 
-	fmt.Printf("Recreating container %s to apply new settings...\n", containerID)
+	LogInfo("Recreating container %s to apply new settings...", containerID)
 
 	// Stop the container
-	fmt.Printf("Stopping container %s...\n", containerID)
+	LogInfo("Stopping container %s...", containerID)
 	if err := a.dockerService.StopContainer(a.ctx, containerID); err != nil {
 		return fmt.Errorf("failed to stop container: %w", err)
 	}
@@ -637,7 +656,7 @@ func (a *App) updateContainerSettings(containerID string, serverDefaults ServerD
 	}
 
 	// Remove the old container
-	fmt.Printf("Removing old container %s...\n", containerID)
+	LogInfo("Removing old container %s...", containerID)
 	if err := a.dockerService.RemoveContainer(a.ctx, containerID, true); err != nil {
 		return fmt.Errorf("failed to remove old container: %w", err)
 	}
@@ -661,7 +680,7 @@ func (a *App) updateContainerSettings(containerID string, serverDefaults ServerD
 		}(),
 	}
 
-	fmt.Printf("Creating new container with updated settings: Memory=%dMB, RestartPolicy=%s, HostPort=%d, ContainerPort=%d\n",
+	LogInfo("Creating new container with updated settings: Memory=%dMB, RestartPolicy=%s, HostPort=%d, ContainerPort=%d",
 		newConfig.MemoryLimitMB, newConfig.RestartPolicy, newConfig.Port, newConfig.ContainerPort)
 
 	newContainerID, err := a.dockerService.CreateContainer(a.ctx, newConfig)
@@ -672,16 +691,16 @@ func (a *App) updateContainerSettings(containerID string, serverDefaults ServerD
 	// Update the configured server with the new container ID
 	configuredServer.ContainerID = newContainerID
 	if err := a.configManager.AddOrUpdateConfiguredServer(*configuredServer); err != nil {
-		fmt.Printf("Warning: Failed to update configured server with new container ID: %v\n", err)
+		LogWarning("Failed to update configured server with new container ID: %v", err)
 	}
 
 	// Start the new container (respecting auto-start setting would have been applied during original creation)
-	fmt.Printf("Starting new container %s...\n", newContainerID)
+	LogInfo("Starting new container %s...", newContainerID)
 	if err := a.dockerService.StartContainer(a.ctx, newContainerID); err != nil {
 		return fmt.Errorf("failed to start new container: %w", err)
 	}
 
-	fmt.Printf("Successfully recreated container: %s -> %s\n", containerID, newContainerID)
+	LogInfo("Successfully recreated container: %s -> %s", containerID, newContainerID)
 	return nil
 }
 
@@ -707,13 +726,13 @@ func (a *App) GetManagedContainers() ([]ContainerInfo, error) {
 
 	// Clean up orphaned containers before returning the managed ones
 	if err := a.CleanupOrphanedContainers(); err != nil {
-		fmt.Printf("[WARNING] Failed to cleanup orphaned containers: %v\n", err)
+		LogWarning("Failed to cleanup orphaned containers: %v", err)
 		// Continue even if cleanup fails - we still want to return the current containers
 	}
 
 	containers, err := a.dockerService.GetManagedContainers(a.ctx)
 	if err != nil {
-		fmt.Printf("[ERROR] Docker service GetManagedContainers failed: %v\n", err)
+		LogError("Docker service GetManagedContainers failed: %v", err)
 		return nil, err
 	}
 
@@ -760,20 +779,20 @@ func (a *App) GetManagedContainers() ([]ContainerInfo, error) {
 
 // StartContainer starts a Docker container
 func (a *App) StartContainer(containerID string) error {
-	fmt.Printf("[DEBUG] App.StartContainer called for container: %s\n", containerID)
+	LogDebug("App.StartContainer called for container: %s", containerID)
 
 	if a.dockerService == nil {
-		fmt.Printf("[ERROR] Docker service not available\n")
+		LogError("Docker service not available")
 		return fmt.Errorf("Docker service not available")
 	}
 
 	err := a.dockerService.StartContainer(a.ctx, containerID)
 	if err != nil {
-		fmt.Printf("[ERROR] Docker service StartContainer failed for %s: %v\n", containerID, err)
+		LogError("Docker service StartContainer failed for %s: %v", containerID, err)
 		return err
 	}
 
-	fmt.Printf("[DEBUG] App.StartContainer completed successfully for: %s\n", containerID)
+	LogDebug("App.StartContainer completed successfully for: %s", containerID)
 	return nil
 }
 
@@ -826,9 +845,9 @@ func (a *App) RemoveContainer(containerID string, force bool) error {
 				(len(containerID) > len(server.ContainerID) && strings.HasPrefix(containerID, server.ContainerID)) {
 				if removeErr := a.configManager.RemoveConfiguredServer(server.ID); removeErr != nil {
 					// Log the error but don't fail the operation
-					fmt.Printf("Warning: Failed to remove configured server entry for container %s: %v\n", containerID, removeErr)
+					LogWarning("Failed to remove configured server entry for container %s: %v", containerID, removeErr)
 				} else {
-					fmt.Printf("Successfully removed configured server entry for container %s\n", containerID)
+					LogInfo("Successfully removed configured server entry for container %s", containerID)
 				}
 				break
 			}
@@ -905,20 +924,20 @@ func (a *App) PullImage(imageName string) error {
 
 // CreateContainer creates a new Docker container with neobelt labels
 func (a *App) CreateContainer(config ContainerCreateConfig) (string, error) {
-	fmt.Printf("[DEBUG] App.CreateContainer called with config: %+v\n", config)
+	LogDebug("App.CreateContainer called with config: %+v", config)
 
 	if a.dockerService == nil {
-		fmt.Printf("[ERROR] Docker service not available\n")
+		LogError("Docker service not available")
 		return "", fmt.Errorf("Docker service not available")
 	}
 
 	containerId, err := a.dockerService.CreateContainer(a.ctx, config)
 	if err != nil {
-		fmt.Printf("[ERROR] Docker service CreateContainer failed: %v\n", err)
+		LogError("Docker service CreateContainer failed: %v", err)
 		return "", err
 	}
 
-	fmt.Printf("[DEBUG] App.CreateContainer completed successfully, returning ID: %s\n", containerId)
+	LogDebug("App.CreateContainer completed successfully, returning ID: %s", containerId)
 	return containerId, nil
 }
 
@@ -1089,7 +1108,7 @@ func (a *App) RemoveInstalledServer(serverID string, removeImage bool) error {
 	// Remove the Docker image if requested
 	if removeImage && a.dockerService != nil {
 		if err := a.dockerService.RemoveImage(a.ctx, installedServer.DockerImage, false); err != nil {
-			fmt.Printf("Warning: Failed to remove Docker image %s: %v\n", installedServer.DockerImage, err)
+			LogWarning("Failed to remove Docker image %s: %v", installedServer.DockerImage, err)
 		}
 	}
 
@@ -1173,9 +1192,14 @@ func (a *App) UpdateAppConfig(appConfig AppConfig) error {
 	oldConfig := config.App
 	if oldConfig.AutoStart != appConfig.AutoStart {
 		if err := a.handleAutostartChange(appConfig.AutoStart); err != nil {
-			fmt.Printf("Warning: Failed to update autostart setting: %v\n", err)
+			LogWarning("Failed to update autostart setting: %v", err)
 			// Don't fail the entire config update if autostart fails
 		}
+	}
+
+	// Check if debug mode changed and update logger
+	if oldConfig.DebugMode != appConfig.DebugMode {
+		SetDebugMode(appConfig.DebugMode)
 	}
 
 	config.App = appConfig
@@ -1193,10 +1217,10 @@ func (a *App) handleAutostartChange(enable bool) error {
 	}
 
 	if enable {
-		fmt.Println("Enabling autostart for Neobelt...")
+		LogInfo("Enabling autostart for Neobelt...")
 		return app.Enable()
 	} else {
-		fmt.Println("Disabling autostart for Neobelt...")
+		LogInfo("Disabling autostart for Neobelt...")
 		return app.Disable()
 	}
 }
@@ -1205,14 +1229,14 @@ func (a *App) handleAutostartChange(enable bool) error {
 func getExecutablePath() string {
 	exec, err := os.Executable()
 	if err != nil {
-		fmt.Printf("Warning: Could not get executable path: %v\n", err)
+		LogWarning("Could not get executable path: %v", err)
 		return "neobelt" // fallback
 	}
 	
 	// Get absolute path
 	absPath, err := filepath.Abs(exec)
 	if err != nil {
-		fmt.Printf("Warning: Could not get absolute path: %v\n", err)
+		LogWarning("Could not get absolute path: %v", err)
 		return exec
 	}
 	
@@ -1405,7 +1429,7 @@ func (dm *DockerMonitor) Stop() {
 func (dm *DockerMonitor) checkDockerStatus() {
 	status, err := dm.app.CheckDockerStatus()
 	if err != nil {
-		log.Printf("[ERROR] Failed to check Docker status: %v", err)
+		LogError("Failed to check Docker status: %v", err)
 		return
 	}
 	
@@ -1417,7 +1441,7 @@ func (dm *DockerMonitor) checkDockerStatus() {
 	
 	if !status.IsRunning {
 		// Docker is installed but not running - show modal to ask user to start it
-		log.Println("[INFO] Docker is not running, showing modal to user...")
+		LogInfo("Docker is not running, showing modal to user...")
 		dm.emitDockerStatusEvent("docker_not_running", status)
 		return
 	}
@@ -1432,4 +1456,201 @@ func (dm *DockerMonitor) emitDockerStatusEvent(eventType string, status *DockerS
 		"type":   eventType,
 		"status": status,
 	})
+}
+
+// OpenLogsDirectory opens the logs directory in the system file explorer
+func (a *App) OpenLogsDirectory() error {
+	if a.configManager == nil {
+		return fmt.Errorf("configuration manager not available")
+	}
+	
+	logDir := a.configManager.GetLogDir()
+	runtime.BrowserOpenURL(a.ctx, "file://"+logDir)
+	return nil
+}
+
+// ClearAllLogs removes all log files from the logs directory
+func (a *App) ClearAllLogs() error {
+	if a.configManager == nil {
+		return fmt.Errorf("configuration manager not available")
+	}
+	
+	logDir := a.configManager.GetLogDir()
+	entries, err := os.ReadDir(logDir)
+	if err != nil {
+		return fmt.Errorf("failed to read logs directory: %w", err)
+	}
+	
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		
+		// Only remove .log files
+		if strings.HasSuffix(entry.Name(), ".log") {
+			logPath := filepath.Join(logDir, entry.Name())
+			if err := os.Remove(logPath); err != nil {
+				LogWarning("Failed to remove log file %s: %v", logPath, err)
+			} else {
+				LogInfo("Removed log file: %s", entry.Name())
+			}
+		}
+	}
+	
+	return nil
+}
+
+// ExportConfiguration exports the current configuration to an encrypted file using save dialog
+func (a *App) ExportConfiguration(password string) (string, error) {
+	if a.configManager == nil {
+		return "", fmt.Errorf("configuration manager not available")
+	}
+	
+	if password == "" {
+		return "", fmt.Errorf("password cannot be empty")
+	}
+	
+	// Get current configuration
+	config := a.configManager.GetConfig()
+	if config == nil {
+		return "", fmt.Errorf("no configuration available")
+	}
+	
+	// Encrypt the configuration
+	encryptedData, err := EncryptConfiguration(config, password)
+	if err != nil {
+		return "", fmt.Errorf("failed to encrypt configuration: %w", err)
+	}
+	
+	// Create suggested filename with timestamp
+	timestamp := time.Now().Format("2006-01-02_15-04-05")
+	suggestedFilename := fmt.Sprintf("neobelt-config-%s.enc", timestamp)
+	
+	// Show save file dialog
+	options := runtime.SaveDialogOptions{
+		Title:           "Export Neobelt Configuration",
+		DefaultFilename: suggestedFilename,
+		Filters: []runtime.FileFilter{
+			{
+				DisplayName: "Encrypted Configuration Files (*.enc)",
+				Pattern:     "*.enc",
+			},
+			{
+				DisplayName: "All Files (*.*)",
+				Pattern:     "*.*",
+			},
+		},
+	}
+	
+	exportPath, err := runtime.SaveFileDialog(a.ctx, options)
+	if err != nil {
+		return "", fmt.Errorf("failed to show save dialog: %w", err)
+	}
+	
+	// Check if user cancelled the dialog
+	if exportPath == "" {
+		return "", fmt.Errorf("export cancelled by user")
+	}
+	
+	// Ensure .enc extension if not provided
+	if !strings.HasSuffix(strings.ToLower(exportPath), ".enc") {
+		exportPath += ".enc"
+	}
+	
+	// Write encrypted data to the selected file
+	if err := os.WriteFile(exportPath, encryptedData, 0600); err != nil {
+		return "", fmt.Errorf("failed to write export file: %w", err)
+	}
+	
+	LogInfo("Configuration exported to: %s", exportPath)
+	return exportPath, nil
+}
+
+// ImportConfiguration imports configuration from encrypted data
+func (a *App) ImportConfiguration(encryptedData, password string) error {
+	if a.configManager == nil {
+		return fmt.Errorf("configuration manager not available")
+	}
+	
+	if encryptedData == "" {
+		return fmt.Errorf("encrypted data cannot be empty")
+	}
+	
+	if password == "" {
+		return fmt.Errorf("password cannot be empty")
+	}
+	
+	// Decrypt configuration
+	config, err := DecryptConfiguration([]byte(encryptedData), password)
+	if err != nil {
+		return fmt.Errorf("failed to decrypt configuration: %w", err)
+	}
+	
+	// Validate configuration structure
+	if config == nil {
+		return fmt.Errorf("invalid configuration data")
+	}
+	
+	// Backup current configuration
+	currentConfig := a.configManager.GetConfig()
+	if currentConfig != nil {
+		backupPath := a.configManager.GetConfigPath() + ".backup"
+		if backupData, err := json.MarshalIndent(currentConfig, "", "  "); err == nil {
+			os.WriteFile(backupPath, backupData, 0600)
+			LogInfo("Current configuration backed up to: %s", backupPath)
+		}
+	}
+	
+	// Update configuration manager with imported config
+	a.configManager.config = config
+	
+	// Save the imported configuration
+	if err := a.configManager.Save(); err != nil {
+		return fmt.Errorf("failed to save imported configuration: %w", err)
+	}
+	
+	// Update logger settings if debug mode changed
+	if config.App.DebugMode != GetDebugMode() {
+		SetDebugMode(config.App.DebugMode)
+	}
+	
+	LogInfo("Configuration imported successfully")
+	return nil
+}
+
+// SelectImportFile opens a file dialog to select an import file and returns the file content
+func (a *App) SelectImportFile() (string, error) {
+	// Show open file dialog
+	options := runtime.OpenDialogOptions{
+		Title: "Import Neobelt Configuration",
+		Filters: []runtime.FileFilter{
+			{
+				DisplayName: "Encrypted Configuration Files (*.enc)",
+				Pattern:     "*.enc",
+			},
+			{
+				DisplayName: "All Files (*.*)",
+				Pattern:     "*.*",
+			},
+		},
+	}
+	
+	filePath, err := runtime.OpenFileDialog(a.ctx, options)
+	if err != nil {
+		return "", fmt.Errorf("failed to show open dialog: %w", err)
+	}
+	
+	// Check if user cancelled the dialog
+	if filePath == "" {
+		return "", fmt.Errorf("import cancelled by user")
+	}
+	
+	// Read the selected file
+	fileContent, err := os.ReadFile(filePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read selected file: %w", err)
+	}
+	
+	LogInfo("Selected import file: %s", filePath)
+	return string(fileContent), nil
 }

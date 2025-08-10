@@ -43,6 +43,12 @@ export class Settings {
                 startupPage: appConfig.startup_page || 'dashboard'
             };
 
+            // Load advanced settings
+            this.settings.advanced = {
+                debugMode: appConfig.debug_mode || false,
+                logRetention: appConfig.log_retention || 30
+            };
+
             // Load server defaults
             const serverDefaults = await window.go.main.App.GetServerDefaults();
             this.settings.servers = {
@@ -97,6 +103,13 @@ export class Settings {
         if (remoteUsernameField) remoteUsernameField.value = this.settings.remoteAccess.username;
         if (privateKeyField) privateKeyField.value = this.settings.remoteAccess.privateKey ? '••••••••••••••••••••' : '';
         if (publicKeyField) publicKeyField.value = this.settings.remoteAccess.publicKey;
+
+        // Update advanced settings fields
+        const debugModeField = document.getElementById('debugMode');
+        const logRetentionField = document.getElementById('logRetention');
+
+        if (debugModeField) debugModeField.checked = this.settings.advanced.debugMode;
+        if (logRetentionField) logRetentionField.value = this.settings.advanced.logRetention;
     }
 
     render() {
@@ -382,14 +395,14 @@ export class Settings {
                                                 <p class="text-sm text-gray-500">Show additional debugging information</p>
                                             </div>
                                             <label class="relative inline-flex items-center cursor-pointer">
-                                                <input type="checkbox" class="sr-only peer" ${this.settings.advanced.debugMode ? 'checked' : ''}>
+                                                <input id="debugMode" type="checkbox" class="sr-only peer" ${this.settings.advanced.debugMode ? 'checked' : ''}>
                                                 <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
                                             </label>
                                         </div>
 
                                         <div>
                                             <label class="block text-sm font-medium text-gray-700 mb-2">Log retention (days)</label>
-                                            <input type="number" value="${this.settings.advanced.logRetention}" min="1" max="365" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500">
+                                            <input id="logRetention" type="number" value="${this.settings.advanced.logRetention}" min="1" max="365" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500">
                                         </div>
 
                                         <div class="pt-4 border-t border-gray-200">
@@ -542,6 +555,10 @@ export class Settings {
             const generalAutoStart = document.getElementById('generalAutoStart')?.checked || false;
             const startupPage = document.getElementById('generalStartupPage')?.value || 'dashboard';
 
+            // Collect Advanced settings values from the form
+            const debugMode = document.getElementById('debugMode')?.checked || false;
+            const logRetention = parseInt(document.getElementById('logRetention')?.value) || 30;
+
             const appConfig = {
                 version: "1.0.0", // Keep current version
                 theme: "light", // Keep default theme for now
@@ -549,7 +566,9 @@ export class Settings {
                 refresh_interval: 5, // Keep default
                 check_for_updates: true, // Keep default
                 startup_page: startupPage,
-                auto_start: generalAutoStart
+                auto_start: generalAutoStart,
+                debug_mode: debugMode,
+                log_retention: logRetention
             };
 
             // Collect Server Defaults values from the form
@@ -586,6 +605,11 @@ export class Settings {
             this.settings.general = {
                 autoStart: generalAutoStart,
                 startupPage: startupPage
+            };
+
+            this.settings.advanced = {
+                debugMode: debugMode,
+                logRetention: logRetention
             };
 
             this.settings.servers = {
@@ -710,7 +734,9 @@ export class Settings {
                         refresh_interval: 5,
                         check_for_updates: true,
                         startup_page: "dashboard",
-                        auto_start: false
+                        auto_start: false,
+                        debug_mode: false,
+                        log_retention: 30
                     };
 
                     const defaultServerDefaults = {
@@ -736,6 +762,10 @@ export class Settings {
                     document.getElementById('generalAutoStart').checked = false;
                     document.getElementById('generalStartupPage').value = 'dashboard';
                     
+                    // Update the UI - Advanced settings
+                    document.getElementById('debugMode').checked = false;
+                    document.getElementById('logRetention').value = '30';
+                    
                     // Update the UI - Server settings
                     document.getElementById('autoStart').checked = false;
                     document.getElementById('defaultPort').value = '8000';
@@ -754,6 +784,11 @@ export class Settings {
                     this.settings.general = {
                         autoStart: false,
                         startupPage: 'dashboard'
+                    };
+
+                    this.settings.advanced = {
+                        debugMode: false,
+                        logRetention: 30
                     };
 
                     this.settings.servers = {
@@ -828,20 +863,350 @@ export class Settings {
         console.log('Restoring backup...');
     }
 
-    openLogsDirectory() {
-        console.log('Opening logs directory...');
+    async openLogsDirectory() {
+        try {
+            await window.go.main.App.OpenLogsDirectory();
+        } catch (error) {
+            console.error('Failed to open logs directory:', error);
+        }
     }
 
-    clearLogs() {
-        console.log('Clearing logs...');
+    async clearLogs() {
+        const content = `
+            <div class="space-y-6">
+                <div class="text-center">
+                    <div class="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <svg class="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                        </svg>
+                    </div>
+                    <h3 class="text-lg font-semibold text-gray-900">Clear All Logs?</h3>
+                    <p class="text-gray-600 mt-2">This will permanently delete all log files. This action cannot be undone.</p>
+                </div>
+
+                <div class="flex space-x-3 justify-end">
+                    <button id="cancel-clear-logs" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+                        Cancel
+                    </button>
+                    <button id="confirm-clear-logs" class="px-4 py-2 text-sm font-medium text-white bg-red-600 border border-transparent rounded-md hover:bg-red-700">
+                        Clear All Logs
+                    </button>
+                </div>
+            </div>
+        `;
+
+        Modal.show(content, {
+            title: 'Clear Logs',
+            size: 'md'
+        });
+
+        // Add event listeners to modal buttons
+        document.getElementById('confirm-clear-logs')?.addEventListener('click', async () => {
+            Modal.hide();
+            try {
+                await window.go.main.App.ClearAllLogs();
+                
+                const successContent = `
+                    <div class="text-center space-y-4">
+                        <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
+                            <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                            </svg>
+                        </div>
+                        <h3 class="text-lg font-semibold text-gray-900">Logs Cleared</h3>
+                        <p class="text-gray-600">All log files have been successfully removed.</p>
+                    </div>
+                `;
+
+                Modal.show(successContent, {
+                    title: 'Success',
+                    size: 'sm'
+                });
+            } catch (error) {
+                console.error('Failed to clear logs:', error);
+                
+                const errorContent = `
+                    <div class="text-center space-y-4">
+                        <div class="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto">
+                            <svg class="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                        </div>
+                        <h3 class="text-lg font-semibold text-gray-900">Clear Failed</h3>
+                        <p class="text-gray-600">Failed to clear logs: ${error.message || 'Unknown error'}</p>
+                    </div>
+                `;
+
+                Modal.show(errorContent, {
+                    title: 'Error',
+                    size: 'sm'
+                });
+            }
+        });
+
+        document.getElementById('cancel-clear-logs')?.addEventListener('click', () => {
+            Modal.hide();
+        });
     }
 
-    exportConfiguration() {
-        console.log('Exporting configuration...');
+    async exportConfiguration() {
+        const content = `
+            <div class="space-y-6">
+                <div class="text-center">
+                    <div class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <svg class="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                        </svg>
+                    </div>
+                    <h3 class="text-lg font-semibold text-gray-900">Export Configuration</h3>
+                    <p class="text-gray-600 mt-2">Enter a password to encrypt your configuration export. Keep this password safe - you'll need it to import the configuration later.</p>
+                </div>
+
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Encryption Password</label>
+                        <input id="export-password" type="password" placeholder="Enter a strong password" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500" minlength="8">
+                        <p class="text-xs text-gray-500 mt-1">Minimum 8 characters required</p>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Confirm Password</label>
+                        <input id="export-password-confirm" type="password" placeholder="Confirm password" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500">
+                    </div>
+                </div>
+
+                <div class="flex space-x-3 justify-end">
+                    <button id="cancel-export" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+                        Cancel
+                    </button>
+                    <button id="confirm-export" class="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700">
+                        Export Configuration
+                    </button>
+                </div>
+            </div>
+        `;
+
+        Modal.show(content, {
+            title: 'Export Configuration',
+            size: 'md'
+        });
+
+        // Add event listeners to modal buttons
+        document.getElementById('confirm-export')?.addEventListener('click', async () => {
+            const password = document.getElementById('export-password')?.value;
+            const confirmPassword = document.getElementById('export-password-confirm')?.value;
+
+            if (!password || password.length < 8) {
+                alert('Password must be at least 8 characters long');
+                return;
+            }
+
+            if (password !== confirmPassword) {
+                alert('Passwords do not match');
+                return;
+            }
+
+            Modal.hide();
+
+            try {
+                const exportPath = await window.go.main.App.ExportConfiguration(password);
+                
+                const successContent = `
+                    <div class="text-center space-y-4">
+                        <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
+                            <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                            </svg>
+                        </div>
+                        <h3 class="text-lg font-semibold text-gray-900">Export Successful</h3>
+                        <p class="text-gray-600">Configuration exported successfully to:</p>
+                        <p class="text-sm font-mono bg-gray-100 p-2 rounded border break-all">${exportPath}</p>
+                        <p class="text-sm text-orange-600 font-medium">⚠️ Keep your password safe! You'll need it to import this configuration.</p>
+                    </div>
+                `;
+
+                Modal.show(successContent, {
+                    title: 'Export Complete',
+                    size: 'lg'
+                });
+            } catch (error) {
+                console.error('Failed to export configuration:', error);
+                
+                // Handle user cancellation gracefully
+                if (error.message && error.message.includes('cancelled by user')) {
+                    return; // Don't show error for user cancellation
+                }
+                
+                const errorContent = `
+                    <div class="text-center space-y-4">
+                        <div class="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto">
+                            <svg class="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                        </div>
+                        <h3 class="text-lg font-semibold text-gray-900">Export Failed</h3>
+                        <p class="text-gray-600">Failed to export configuration: ${error.message || 'Unknown error'}</p>
+                    </div>
+                `;
+
+                Modal.show(errorContent, {
+                    title: 'Error',
+                    size: 'sm'
+                });
+            }
+        });
+
+        document.getElementById('cancel-export')?.addEventListener('click', () => {
+            Modal.hide();
+        });
     }
 
-    importConfiguration() {
-        console.log('Importing configuration...');
+    async importConfiguration() {
+        try {
+            // Use Wails native file dialog to select import file
+            const fileContent = await window.go.main.App.SelectImportFile();
+            
+            // If file was selected successfully, show password dialog
+            this.handleImportData(fileContent);
+        } catch (error) {
+            // Handle user cancellation gracefully
+            if (error.message && error.message.includes('cancelled by user')) {
+                return; // Don't show error for user cancellation
+            }
+            
+            console.error('Failed to select import file:', error);
+            
+            const errorContent = `
+                <div class="text-center space-y-4">
+                    <div class="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto">
+                        <svg class="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </div>
+                    <h3 class="text-lg font-semibold text-gray-900">File Selection Failed</h3>
+                    <p class="text-gray-600">Failed to select import file: ${error.message || 'Unknown error'}</p>
+                </div>
+            `;
+
+            Modal.show(errorContent, {
+                title: 'Error',
+                size: 'sm'
+            });
+        }
+    }
+
+    async handleImportData(fileContent) {
+        const content = `
+            <div class="space-y-6">
+                <div class="text-center">
+                    <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                        </svg>
+                    </div>
+                    <h3 class="text-lg font-semibold text-gray-900">Import Configuration</h3>
+                    <p class="text-gray-600 mt-2">Enter the password that was used to encrypt this configuration file.</p>
+                </div>
+
+                <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                    <div class="flex">
+                        <svg class="w-5 h-5 text-yellow-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
+                        </svg>
+                        <div class="ml-3">
+                            <h4 class="text-sm font-medium text-yellow-800">Warning</h4>
+                            <p class="mt-1 text-sm text-yellow-700">Importing will replace your current configuration. A backup will be created automatically.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Decryption Password</label>
+                    <input id="import-password" type="password" placeholder="Enter the password used for encryption" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500">
+                </div>
+
+                <div class="flex space-x-3 justify-end">
+                    <button id="cancel-import" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+                        Cancel
+                    </button>
+                    <button id="confirm-import" class="px-4 py-2 text-sm font-medium text-white bg-green-600 border border-transparent rounded-md hover:bg-green-700">
+                        Import Configuration
+                    </button>
+                </div>
+            </div>
+        `;
+
+        Modal.show(content, {
+            title: 'Import Configuration',
+            size: 'md'
+        });
+
+        // Add event listeners to modal buttons
+        document.getElementById('confirm-import')?.addEventListener('click', async () => {
+            const password = document.getElementById('import-password')?.value;
+
+            if (!password) {
+                alert('Please enter the decryption password');
+                return;
+            }
+            
+            Modal.hide();
+
+            try {
+                // Pass the file content directly to the backend
+                await window.go.main.App.ImportConfiguration(fileContent, password);
+                
+                const successContent = `
+                    <div class="text-center space-y-4">
+                        <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
+                            <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                            </svg>
+                        </div>
+                        <h3 class="text-lg font-semibold text-gray-900">Import Successful</h3>
+                        <p class="text-gray-600">Configuration imported successfully. The application will need to be restarted for all changes to take effect.</p>
+                        <p class="text-sm text-blue-600 font-medium">A backup of your previous configuration has been created.</p>
+                    </div>
+                `;
+
+                Modal.show(successContent, {
+                    title: 'Import Complete',
+                    size: 'md'
+                });
+
+                // Reload settings to reflect imported configuration
+                setTimeout(() => {
+                    this.loadSettings().then(() => {
+                        this.updateUI();
+                    });
+                }, 2000);
+
+            } catch (error) {
+                console.error('Failed to import configuration:', error);
+                
+                const errorContent = `
+                    <div class="text-center space-y-4">
+                        <div class="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto">
+                            <svg class="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                        </div>
+                        <h3 class="text-lg font-semibold text-gray-900">Import Failed</h3>
+                        <p class="text-gray-600">Failed to import configuration. This could be due to an incorrect password or corrupted file.</p>
+                        <p class="text-sm text-gray-500">Error: ${error.message || 'Unknown error'}</p>
+                    </div>
+                `;
+
+                Modal.show(errorContent, {
+                    title: 'Error',
+                    size: 'md'
+                });
+            }
+        });
+
+        document.getElementById('cancel-import')?.addEventListener('click', () => {
+            Modal.hide();
+        });
     }
 
     handleGenerateSSHKeysClick() {

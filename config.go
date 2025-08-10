@@ -27,6 +27,8 @@ type AppConfig struct {
 	CheckForUpdates bool   `json:"check_for_updates" mapstructure:"check_for_updates"`
 	StartupPage     string `json:"startup_page" mapstructure:"startup_page"`
 	AutoStart       bool   `json:"auto_start" mapstructure:"auto_start"`
+	DebugMode       bool   `json:"debug_mode" mapstructure:"debug_mode"`
+	LogRetention    int    `json:"log_retention" mapstructure:"log_retention"` // days
 }
 
 // ServerDefaultsConfig contains default settings for new servers
@@ -111,6 +113,12 @@ func NewConfigManager() (*ConfigManager, error) {
 		return nil, fmt.Errorf("failed to create config directory: %w", err)
 	}
 
+	// Create logs directory
+	logsDir := filepath.Join(neobeltConfigDir, "logs")
+	if err := os.MkdirAll(logsDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create logs directory: %w", err)
+	}
+
 	configPath := filepath.Join(neobeltConfigDir, "config.json")
 
 	// Initialize viper
@@ -127,6 +135,8 @@ func NewConfigManager() (*ConfigManager, error) {
 	v.SetDefault("app.check_for_updates", true)
 	v.SetDefault("app.startup_page", "dashboard")
 	v.SetDefault("app.auto_start", false)
+	v.SetDefault("app.debug_mode", false)
+	v.SetDefault("app.log_retention", 30)
 	v.SetDefault("server_defaults.auto_start", false)
 	v.SetDefault("server_defaults.default_port", 8000)
 	v.SetDefault("server_defaults.max_memory_mb", 512)
@@ -159,7 +169,7 @@ func (cm *ConfigManager) Load() error {
 	if err := cm.viper.ReadInConfig(); err != nil {
 		// If config file doesn't exist, create it with defaults
 		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
-			fmt.Printf("Config file not found, creating default configuration at: %s\n", cm.configPath)
+			fmt.Printf("Config file not found, creating default configuration at: %s\n", cm.configPath) // Keep as fmt since logger isn't initialized yet
 			if err := cm.Save(); err != nil {
 				return fmt.Errorf("failed to create default config: %w", err)
 			}
@@ -363,4 +373,10 @@ func (cm *ConfigManager) RemoveConfiguredServer(serverID string) error {
 // GetConfigPath returns the path to the configuration file
 func (cm *ConfigManager) GetConfigPath() string {
 	return cm.configPath
+}
+
+// GetLogDir returns the path to the logs directory
+func (cm *ConfigManager) GetLogDir() string {
+	configDir := filepath.Dir(cm.configPath)
+	return filepath.Join(configDir, "logs")
 }

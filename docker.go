@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"os/exec"
 	"runtime"
 	"sort"
@@ -74,7 +73,7 @@ func (ds *DockerService) GetManagedContainers(ctx context.Context) ([]ContainerI
 		Filters: filterArgs,
 	})
 	if err != nil {
-		log.Printf("[ERROR] Failed to list containers: %v", err)
+		LogError("Failed to list containers: %v", err)
 		return nil, fmt.Errorf("failed to list containers: %w", err)
 	}
 
@@ -82,7 +81,7 @@ func (ds *DockerService) GetManagedContainers(ctx context.Context) ([]ContainerI
 	for _, cont := range containers {
 		info, err := ds.getContainerInfo(ctx, cont.ID)
 		if err != nil {
-			log.Printf("Warning: failed to get info for container %s: %v", cont.ID, err)
+			LogWarning("Failed to get info for container %s: %v", cont.ID, err)
 			continue
 		}
 		containerInfos = append(containerInfos, *info)
@@ -203,31 +202,31 @@ func formatUptime(d time.Duration) string {
 
 // StartContainer starts a stopped container
 func (ds *DockerService) StartContainer(ctx context.Context, containerID string) error {
-	log.Printf("[DEBUG] Starting container: %s", containerID)
+	LogDebug("Starting container: %s", containerID)
 
 	// First check if container exists
 	inspect, err := ds.client.ContainerInspect(ctx, containerID)
 	if err != nil {
-		log.Printf("[ERROR] Container %s not found before start: %v", containerID, err)
+		LogError("Container %s not found before start: %v", containerID, err)
 		return fmt.Errorf("container not found: %w", err)
 	}
 
-	log.Printf("[DEBUG] Container %s exists, current state: %s", containerID, inspect.State.Status)
+	LogDebug("Container %s exists, current state: %s", containerID, inspect.State.Status)
 
 	err = ds.client.ContainerStart(ctx, containerID, container.StartOptions{})
 	if err != nil {
-		log.Printf("[ERROR] Failed to start container %s: %v", containerID, err)
+		LogError("Failed to start container %s: %v", containerID, err)
 		return err
 	}
 
-	log.Printf("[DEBUG] Container start command completed for %s", containerID)
+	LogDebug("Container start command completed for %s", containerID)
 
 	// Verify the container started successfully
 	inspect, err = ds.client.ContainerInspect(ctx, containerID)
 	if err != nil {
-		log.Printf("[ERROR] Failed to inspect container %s after start: %v", containerID, err)
+		LogError("Failed to inspect container %s after start: %v", containerID, err)
 	} else {
-		log.Printf("[DEBUG] Container %s post-start state: %s", containerID, inspect.State.Status)
+		LogDebug("Container %s post-start state: %s", containerID, inspect.State.Status)
 	}
 
 	return nil
@@ -366,7 +365,7 @@ func (ds *DockerService) PullImage(ctx context.Context, imageName string) error 
 
 // CreateContainer creates a new container with neobelt labels
 func (ds *DockerService) CreateContainer(ctx context.Context, config ContainerCreateConfig) (string, error) {
-	log.Printf("[DEBUG] CreateContainer called with config: %+v", config)
+	LogDebug("CreateContainer called with config: %+v", config)
 
 	// Add neobelt management labels
 	if config.Labels == nil {
@@ -375,14 +374,14 @@ func (ds *DockerService) CreateContainer(ctx context.Context, config ContainerCr
 	config.Labels["neobelt.managed-by"] = "true"
 	config.Labels["neobelt.created-at"] = time.Now().Format(time.RFC3339)
 
-	log.Printf("[DEBUG] Container labels set: %+v", config.Labels)
+	LogDebug("Container labels set: %+v", config.Labels)
 
 	// Convert environment map to slice
 	var env []string
 	for key, value := range config.Environment {
 		env = append(env, fmt.Sprintf("%s=%s", key, value))
 	}
-	log.Printf("[DEBUG] Environment variables: %v", env)
+	LogDebug("Environment variables: %v", env)
 
 	// Convert volume map to mounts
 	var mounts []mount.Mount
@@ -393,13 +392,13 @@ func (ds *DockerService) CreateContainer(ctx context.Context, config ContainerCr
 			Target: containerPath,
 		})
 	}
-	log.Printf("[DEBUG] Volume mounts: %+v", mounts)
+	LogDebug("Volume mounts: %+v", mounts)
 
 	// Parse docker command if provided
 	var cmd []string
 	if config.DockerCommand != "" {
 		cmd = parseDockerCommand(config.DockerCommand)
-		log.Printf("[DEBUG] Setting container CMD to: %v", cmd)
+		LogDebug("Setting container CMD to: %v", cmd)
 	}
 
 	// Create container configuration
@@ -420,7 +419,7 @@ func (ds *DockerService) CreateContainer(ctx context.Context, config ContainerCr
 	// Set memory limit if specified
 	if config.MemoryLimitMB > 0 {
 		hostConfig.Memory = int64(config.MemoryLimitMB) * 1024 * 1024 // Convert MB to bytes
-		log.Printf("[DEBUG] Memory limit set to: %d MB (%d bytes)", config.MemoryLimitMB, hostConfig.Memory)
+		LogDebug("Memory limit set to: %d MB (%d bytes)", config.MemoryLimitMB, hostConfig.Memory)
 	}
 
 	// Set restart policy if specified
@@ -428,7 +427,7 @@ func (ds *DockerService) CreateContainer(ctx context.Context, config ContainerCr
 		hostConfig.RestartPolicy = container.RestartPolicy{
 			Name: container.RestartPolicyMode(config.RestartPolicy),
 		}
-		log.Printf("[DEBUG] Restart policy set to: %s", config.RestartPolicy)
+		LogDebug("Restart policy set to: %s", config.RestartPolicy)
 	}
 
 	// Add port mapping if specified
@@ -449,28 +448,28 @@ func (ds *DockerService) CreateContainer(ctx context.Context, config ContainerCr
 		containerConfig.ExposedPorts = nat.PortSet{
 			containerPort: struct{}{},
 		}
-		log.Printf("[DEBUG] Port mapping configured: host %d -> container %d", config.Port, containerPortNum)
+		LogDebug("Port mapping configured: host %d -> container %d", config.Port, containerPortNum)
 	}
 
-	log.Printf("[DEBUG] Creating container with name: %s, image: %s", config.Name, config.Image)
+	LogDebug("Creating container with name: %s, image: %s", config.Name, config.Image)
 	resp, err := ds.client.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, config.Name)
 	if err != nil {
-		log.Printf("[ERROR] Failed to create container: %v", err)
+		LogError("Failed to create container: %v", err)
 		return "", fmt.Errorf("failed to create container: %w", err)
 	}
 
-	log.Printf("[DEBUG] Container created successfully with ID: %s", resp.ID)
+	LogDebug("Container created successfully with ID: %s", resp.ID)
 
 	// Immediately verify the container was created and has correct labels
 	inspect, err := ds.client.ContainerInspect(ctx, resp.ID)
 	if err != nil {
-		log.Printf("[ERROR] Failed to inspect newly created container %s: %v", resp.ID, err)
+		LogError("Failed to inspect newly created container %s: %v", resp.ID, err)
 	} else {
-		log.Printf("[DEBUG] Container %s inspect successful - Labels: %+v", resp.ID, inspect.Config.Labels)
+		LogDebug("Container %s inspect successful - Labels: %+v", resp.ID, inspect.Config.Labels)
 		if managedBy, exists := inspect.Config.Labels["neobelt.managed-by"]; exists {
-			log.Printf("[DEBUG] Container %s has neobelt.managed-by label: %s", resp.ID, managedBy)
+			LogDebug("Container %s has neobelt.managed-by label: %s", resp.ID, managedBy)
 		} else {
-			log.Printf("[WARNING] Container %s is missing neobelt.managed-by label!", resp.ID)
+			LogWarning("Container %s is missing neobelt.managed-by label!", resp.ID)
 		}
 	}
 
@@ -568,7 +567,7 @@ func parseDockerCommand(dockerCommand string) []string {
 		return nil
 	}
 
-	log.Printf("[DEBUG] Using docker command as CMD: %s", dockerCommand)
+	LogDebug("Using docker command as CMD: %s", dockerCommand)
 
 	// Simple argument parsing - split by spaces, respecting quoted strings
 	return parseCommandArgs(dockerCommand)
@@ -658,26 +657,26 @@ func (ds *DockerService) CleanupOrphanedContainers(ctx context.Context, configur
 		return nil
 	}
 
-	log.Printf("[INFO] Found %d orphaned neobelt containers, cleaning up...", len(orphaned))
+	LogInfo("Found %d orphaned neobelt containers, cleaning up...", len(orphaned))
 
 	for _, container := range orphaned {
-		log.Printf("[INFO] Cleaning up orphaned container: %s (%s)", container.ID, container.Name)
+		LogInfo("Cleaning up orphaned container: %s (%s)", container.ID, container.Name)
 
 		// Stop the container if it's running
 		if container.State == "running" {
-			log.Printf("[INFO] Stopping running orphaned container: %s", container.ID)
+			LogInfo("Stopping running orphaned container: %s", container.ID)
 			if err := ds.StopContainer(ctx, container.ID); err != nil {
-				log.Printf("[WARNING] Failed to stop orphaned container %s: %v", container.ID, err)
+				LogWarning("Failed to stop orphaned container %s: %v", container.ID, err)
 				// Continue with removal even if stop fails
 			}
 		}
 
 		// Remove the container
-		log.Printf("[INFO] Removing orphaned container: %s", container.ID)
+		LogInfo("Removing orphaned container: %s", container.ID)
 		if err := ds.RemoveContainer(ctx, container.ID, true); err != nil {
-			log.Printf("[ERROR] Failed to remove orphaned container %s: %v", container.ID, err)
+			LogError("Failed to remove orphaned container %s: %v", container.ID, err)
 		} else {
-			log.Printf("[INFO] Successfully removed orphaned container: %s", container.ID)
+			LogInfo("Successfully removed orphaned container: %s", container.ID)
 		}
 	}
 
