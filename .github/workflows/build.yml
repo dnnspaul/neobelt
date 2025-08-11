@@ -47,18 +47,32 @@ jobs:
           cache: 'npm'
           cache-dependency-path: './frontend/package-lock.json'
 
-      - name: Build application
-        uses: dAppServer/wails-build-action@v2.2
-        with:
-          build-name: ${{ matrix.build.name }}
-          build-platform: ${{ matrix.build.platform }}
-          package: true
-          go-version: '1.23'
+      - name: Install Wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: Install frontend dependencies
+        run: npm install
+        working-directory: ./frontend
+
+      - name: Build application (Linux)
+        if: matrix.build.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev
+          wails build -platform linux/amd64 -ldflags "-s -w"
+
+      - name: Build application (Windows)
+        if: matrix.build.os == 'windows-latest'
+        run: wails build -platform windows/amd64 -ldflags "-s -w"
+
+      - name: Build application (macOS)
+        if: matrix.build.os == 'macos-latest'
+        run: wails build -platform darwin/universal -ldflags "-s -w"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.build.name }}
+          name: ${{ matrix.build.name }}-${{ github.run_id }}
           path: |
             ./build/bin/*
 
@@ -75,14 +89,14 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: ./artifacts
+          pattern: neobelt-*
+          merge-multiple: true
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            ./artifacts/neobelt-linux-amd64/*
-            ./artifacts/neobelt-windows-amd64/*
-            ./artifacts/neobelt-darwin-universal/*
+            ./artifacts/**/*
           draft: false
           prerelease: false
         env:
