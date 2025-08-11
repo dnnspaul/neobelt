@@ -1,4 +1,5 @@
 import Modal from '../components/Modal.js';
+import { logger, updateDebugMode } from '../utils/logger.js';
 
 export class Settings {
     constructor() {
@@ -70,7 +71,7 @@ export class Settings {
             
             this.originalSettings = JSON.parse(JSON.stringify(this.settings));
         } catch (error) {
-            console.error('Failed to load settings:', error);
+            logger.error('Failed to load settings:', error);
         }
     }
 
@@ -545,7 +546,7 @@ export class Settings {
     }
 
     async saveSettings() {
-        console.log('Saving settings...');
+        logger.info('Saving settings...');
         
         // Set button to loading state
         this.setSaveButtonLoading(true);
@@ -612,6 +613,9 @@ export class Settings {
                 logRetention: logRetention
             };
 
+            // Update JavaScript logger debug mode cache immediately
+            updateDebugMode();
+
             this.settings.servers = {
                 autoStart,
                 defaultPort,
@@ -627,7 +631,7 @@ export class Settings {
                 keyGenerated: this.settings.remoteAccess.keyGenerated
             };
         } catch (error) {
-            console.error('Failed to save settings:', error);
+            logger.error('Failed to save settings:', error);
             
             const content = `
                 <div class="text-center space-y-4">
@@ -823,7 +827,7 @@ export class Settings {
                         size: 'sm'
                     });
                 } catch (error) {
-                    console.error('Failed to reset settings:', error);
+                    logger.error('Failed to reset settings:', error);
                     
                     const errorContent = `
                         <div class="text-center space-y-4">
@@ -848,26 +852,26 @@ export class Settings {
 
 
     detectClaude() {
-        console.log('Detecting Claude Desktop...');
+        logger.info('Detecting Claude Desktop...');
     }
 
     testClaudeConnection() {
-        console.log('Testing Claude connection...');
+        logger.info('Testing Claude connection...');
     }
 
     backupConfig() {
-        console.log('Creating backup...');
+        logger.info('Creating backup...');
     }
 
     restoreConfig() {
-        console.log('Restoring backup...');
+        logger.info('Restoring backup...');
     }
 
     async openLogsDirectory() {
         try {
             await window.go.main.App.OpenLogsDirectory();
         } catch (error) {
-            console.error('Failed to open logs directory:', error);
+            logger.error('Failed to open logs directory:', error);
         }
     }
 
@@ -923,7 +927,7 @@ export class Settings {
                     size: 'sm'
                 });
             } catch (error) {
-                console.error('Failed to clear logs:', error);
+                logger.error('Failed to clear logs:', error);
                 
                 const errorContent = `
                     <div class="text-center space-y-4">
@@ -1030,7 +1034,7 @@ export class Settings {
                     size: 'lg'
                 });
             } catch (error) {
-                console.error('Failed to export configuration:', error);
+                logger.error('Failed to export configuration:', error);
                 
                 // Handle user cancellation gracefully
                 if (error.message && error.message.includes('cancelled by user')) {
@@ -1074,7 +1078,7 @@ export class Settings {
                 return; // Don't show error for user cancellation
             }
             
-            console.error('Failed to select import file:', error);
+            logger.error('Failed to select import file:', error);
             
             const errorContent = `
                 <div class="text-center space-y-4">
@@ -1182,7 +1186,7 @@ export class Settings {
                 }, 2000);
 
             } catch (error) {
-                console.error('Failed to import configuration:', error);
+                logger.error('Failed to import configuration:', error);
                 
                 const errorContent = `
                     <div class="text-center space-y-4">
@@ -1278,7 +1282,7 @@ export class Settings {
     }
 
     async generateSSHKeys() {
-        console.log('Generating SSH keys...');
+        logger.info('Generating SSH keys...');
         
         const generateBtn = document.getElementById('generate-ssh-keys-btn');
         const originalText = generateBtn ? generateBtn.textContent : '';
@@ -1325,7 +1329,7 @@ export class Settings {
             };
             
         } catch (error) {
-            console.error('Failed to generate SSH keys:', error);
+            logger.error('Failed to generate SSH keys:', error);
             
             const content = `
                 <div class="text-center space-y-4">
@@ -1375,12 +1379,12 @@ export class Settings {
                 }, 2000);
             }
         } catch (error) {
-            console.error('Failed to copy public key:', error);
+            logger.error('Failed to copy public key:', error);
         }
     }
 
     testRemoteConnection() {
-        console.log('Testing remote connection...');
+        logger.info('Testing remote connection...');
         
         const content = `
             <div class="text-center space-y-4">

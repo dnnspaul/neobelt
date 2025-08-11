@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -29,7 +30,70 @@ const (
 	LogLevelWarning
 )
 
+// LogMessage represents a log entry stored in memory
+type LogMessage struct {
+	Level     LogLevel  `json:"level"`
+	Message   string    `json:"message"`
+	Timestamp time.Time `json:"timestamp"`
+}
+
+// LogBuffer manages a circular buffer of log messages
+type LogBuffer struct {
+	messages []LogMessage
+	index    int
+	size     int
+	mutex    sync.RWMutex
+}
+
+// NewLogBuffer creates a new log buffer with specified size
+func NewLogBuffer(size int) *LogBuffer {
+	return &LogBuffer{
+		messages: make([]LogMessage, size),
+		size:     size,
+	}
+}
+
+// Add adds a new log message to the buffer
+func (lb *LogBuffer) Add(level LogLevel, message string) {
+	lb.mutex.Lock()
+	defer lb.mutex.Unlock()
+
+	lb.messages[lb.index] = LogMessage{
+		Level:     level,
+		Message:   message,
+		Timestamp: time.Now(),
+	}
+	lb.index = (lb.index + 1) % lb.size
+}
+
+// GetRecent returns the most recent log messages (up to count)
+func (lb *LogBuffer) GetRecent(count int) []LogMessage {
+	lb.mutex.RLock()
+	defer lb.mutex.RUnlock()
+
+	if count > lb.size {
+		count = lb.size
+	}
+
+	result := make([]LogMessage, 0, count)
+	
+	// Find the starting point - walk backwards from current index
+	start := (lb.index - count + lb.size) % lb.size
+	
+	for i := 0; i < count; i++ {
+		idx := (start + i) % lb.size
+		msg := lb.messages[idx]
+		// Only include messages that have been set (non-zero timestamp)
+		if !msg.Timestamp.IsZero() {
+			result = append(result, msg)
+		}
+	}
+
+	return result
+}
+
 var appLogger *Logger
+var logBuffer *LogBuffer
 
 // InitLogger initializes the application logger
 func InitLogger(logDir string, debugMode bool) error {
@@ -68,6 +132,9 @@ func InitLogger(logDir string, debugMode bool) error {
 		debugMode:   debugMode,
 	}
 
+	// Initialize log buffer to keep last 100 messages in memory
+	logBuffer = NewLogBuffer(100)
+
 	LogInfo("Logger initialized with debug mode: %t", debugMode)
 	return nil
 }
@@ -81,41 +148,69 @@ func CloseLogger() {
 
 // LogInfo logs an info message
 func LogInfo(format string, args ...interface{}) {
+	message := fmt.Sprintf(format, args...)
+	
 	if appLogger != nil {
 		appLogger.infoLogger.Printf(format, args...)
 	} else {
 		// Fallback to standard output if logger not initialized
 		fmt.Printf("[INFO] "+format+"\n", args...)
 	}
+	
+	// Add to memory buffer
+	if logBuffer != nil {
+		logBuffer.Add(LogLevelInfo, message)
+	}
 }
 
 // LogError logs an error message
 func LogError(format string, args ...interface{}) {
+	message := fmt.Sprintf(format, args...)
+	
 	if appLogger != nil {
 		appLogger.errorLogger.Printf(format, args...)
 	} else {
 		// Fallback to standard error if logger not initialized
 		fmt.Fprintf(os.Stderr, "[ERROR] "+format+"\n", args...)
 	}
+	
+	// Add to memory buffer
+	if logBuffer != nil {
+		logBuffer.Add(LogLevelError, message)
+	}
 }
 
 // LogDebug logs a debug message (only shown in console if debug mode is enabled)
 func LogDebug(format string, args ...interface{}) {
+	message := fmt.Sprintf(format, args...)
+	
 	if appLogger != nil {
 		appLogger.debugLogger.Printf(format, args...)
 	} else if appLogger == nil {
 		// Fallback - only show if we can't determine debug mode
 		fmt.Printf("[DEBUG] "+format+"\n", args...)
 	}
+	
+	// Add to memory buffer
+	if logBuffer != nil {
+		logBuffer.Add(LogLevelDebug, message)
+	}
 }
 
 // LogWarning logs a warning message
 func LogWarning(format string, args ...interface{}) {
+	message := fmt.Sprintf(format, args...)
+	
 	if appLogger != nil {
 		// Use info logger with WARNING prefix
 		appLogger.infoLogger.Printf("[WARNING] "+format, args...)
 	} else {
 		fmt.Printf("[WARNING] "+format+"\n", args...)
+	}
+	
+	// Add to memory buffer
+	if logBuffer != nil {
+		logBuffer.Add(LogLevelWarning, message)
 	}
 }
 
@@ -186,4 +281,12 @@ func GetDebugMode() bool {
 		return appLogger.debugMode
 	}
 	return false
+}
+
+// GetRecentLogMessages returns the most recent log messages from the memory buffer
+func GetRecentLogMessages(count int) []LogMessage {
+	if logBuffer == nil {
+		return []LogMessage{}
+	}
+	return logBuffer.GetRecent(count)
 }

@@ -1,4 +1,5 @@
 import Modal from '../components/Modal.js';
+import { logger } from '../utils/logger.js';
 import { BrowserOpenURL } from '../../wailsjs/runtime/runtime.js';
 import { 
     renderMarkdown, 
@@ -200,7 +201,7 @@ export class Servers {
         try {
             // Get configured servers to find the configuration for this container
             const configuredServers = await window.go.main.App.GetConfiguredServers();
-            console.log('Configured servers:', configuredServers);
+            logger.debug('Configured servers:', configuredServers);
             
             // Find the configured server that matches this container
             const configuredServer = configuredServers.find(cs => 
@@ -214,16 +215,16 @@ export class Servers {
                 return;
             }
             
-            console.log('Current configured server:', configuredServer);
+            logger.debug('Current configured server:', configuredServer);
             
             // Get the installed server metadata to have the registry information
             const installedServers = await window.go.main.App.GetInstalledServers();
             const installedServer = installedServers.find(is => is.id === configuredServer.server_id);
-            console.log('Installed server metadata:', installedServer);
+            logger.debug('Installed server metadata:', installedServer);
             
             // If installed server is not found, we can still proceed with stored configuration data
             if (!installedServer) {
-                console.warn('Installed server not found, using stored configuration data only');
+                logger.warning('Installed server not found, using stored configuration data only');
             }
             
             // Create a container config object from the configured server data
@@ -241,7 +242,7 @@ export class Servers {
             // Show the configuration form with current values
             this.showServerConfigurationForm(server, installedServer, containerConfig, true);
         } catch (error) {
-            console.error('Failed to load server configuration:', error);
+            logger.error('Failed to load server configuration:', error);
             this.showErrorModal('Load Configuration Failed', `Failed to load server configuration: ${error.message || error}`);
         }
     }
@@ -608,15 +609,15 @@ export class Servers {
 
     async confirmRemoveServer(serverId) {
         try {
-            console.log('Attempting to remove server:', serverId);
+            logger.debug('Attempting to remove server:', serverId);
             await window.go.main.App.RemoveContainer(serverId, true);
-            console.log('Server removal successful:', serverId);
+            logger.debug('Server removal successful:', serverId);
             Modal.hide();
             // Refresh the servers list
             await this.loadServers();
-            console.log('Servers list refreshed after removal');
+            logger.debug('Servers list refreshed after removal');
         } catch (error) {
-            console.error('Failed to remove server:', error);
+            logger.error('Failed to remove server:', error);
             Modal.hide();
             this.showErrorModal('Remove Failed', `Failed to remove server: ${error.message || error}`);
         }
@@ -663,7 +664,7 @@ export class Servers {
             }, 100);
 
         } catch (error) {
-            console.error('Failed to load installed servers:', error);
+            logger.error('Failed to load installed servers:', error);
             this.showErrorModal('Load Failed', 'Failed to load installed servers information.');
         }
     }
@@ -810,7 +811,7 @@ export class Servers {
                             }, 1500);
                             
                         } catch (error) {
-                            console.error('Failed to delete installed server:', error);
+                            logger.error('Failed to delete installed server:', error);
                             this.showErrorModal('Delete Failed', `Failed to delete installed server: ${error.message || error}`);
                         }
                     });
@@ -914,7 +915,7 @@ export class Servers {
                 });
             }, 100);
         } catch (error) {
-            console.error('Failed to load installed servers:', error);
+            logger.error('Failed to load installed servers:', error);
             this.showErrorModal('Load Failed', 'Failed to load installed servers list.');
         }
     }
@@ -1032,7 +1033,7 @@ export class Servers {
             try {
                 serverDefaults = await window.go.main.App.GetServerDefaults();
             } catch (error) {
-                console.warn('Failed to load server defaults, using fallbacks:', error);
+                logger.warning('Failed to load server defaults, using fallbacks:', error);
                 serverDefaults = {
                     auto_start: false,
                     default_port: 8000,
@@ -1056,13 +1057,13 @@ export class Servers {
                 dockerCommand = installedServer.docker_command;
             }
             
-            console.log('=== DOCKER COMMAND DEBUG ===');
-            console.log('Docker command from containerConfig:', containerConfig.docker_command);
-            console.log('Docker command from installedServer:', installedServer?.docker_command);
-            console.log('Final docker command:', dockerCommand);
-            console.log('Container config:', containerConfig);
-            console.log('Installed server data:', installedServer);
-            console.log('=== END DEBUG ===');
+            logger.debug('=== DOCKER COMMAND DEBUG ===');
+            logger.debug('Docker command from containerConfig:', containerConfig.docker_command);
+            logger.debug('Docker command from installedServer:', installedServer?.docker_command);
+            logger.debug('Final docker command:', dockerCommand);
+            logger.debug('Container config:', containerConfig);
+            logger.debug('Installed server data:', installedServer);
+            logger.debug('=== END DEBUG ===');
 
             // Use docker image from containerConfig (stored) or fall back to installedServer
             const dockerImage = containerConfig.docker_image || (installedServer?.docker_image);
@@ -1087,13 +1088,13 @@ export class Servers {
                 }
             };
 
-            console.log('Updating container configuration:', newConfig);
+            logger.debug('Updating container configuration:', newConfig);
             
             // Show confirmation modal first
             this.showUpdateConfigurationConfirmation(serverId, containerConfig, newConfig, installedServer);
 
         } catch (error) {
-            console.error('Failed to prepare configuration update:', error);
+            logger.error('Failed to prepare configuration update:', error);
             this.showErrorModal('Configuration Update Failed', `Failed to prepare configuration update: ${error.message || error}`);
         }
     }
@@ -1157,28 +1158,28 @@ export class Servers {
 
     async executeContainerConfigurationUpdate(serverId, oldConfig, newConfig, installedServer) {
         try {
-            console.log('Starting container configuration update...');
+            logger.debug('Starting container configuration update...');
             
             // Step 1: Stop the container
-            console.log('Stopping container...');
+            logger.debug('Stopping container...');
             await window.go.main.App.StopContainer(serverId);
             
             // Step 2: Remove the old container
-            console.log('Removing old container...');
+            logger.debug('Removing old container...');
             await window.go.main.App.RemoveContainer(serverId, true);
             
             // Step 3: Create new container with updated configuration
-            console.log('Creating new container with updated configuration...');
+            logger.debug('Creating new container with updated configuration...');
             const newContainerId = await window.go.main.App.CreateContainer(newConfig);
-            console.log('New container created with ID:', newContainerId);
+            logger.debug('New container created with ID:', newContainerId);
             
             // Step 4: Start the new container
-            console.log('Starting new container...');
+            logger.debug('Starting new container...');
             await window.go.main.App.StartContainer(newContainerId);
             
             // Step 5: Update the configured server entry
             try {
-                console.log('Updating configured server entry...');
+                logger.debug('Updating configured server entry...');
                 const serverIdForConfig = (installedServer?.id) || containerConfig.server_id;
                 await window.go.main.App.CreateConfiguredServer(
                     serverIdForConfig,
@@ -1188,29 +1189,29 @@ export class Servers {
                     newConfig.environment,
                     newConfig.volumes
                 );
-                console.log('Configured server entry updated successfully');
+                logger.debug('Configured server entry updated successfully');
             } catch (configError) {
-                console.warn('Failed to update configured server entry:', configError);
+                logger.warning('Failed to update configured server entry:', configError);
                 // Don't fail the whole operation - container was updated successfully
             }
             
             Modal.hide();
-            console.log('Refreshing servers list...');
+            logger.debug('Refreshing servers list...');
             await this.loadServers(); // Refresh the list
             
             this.showSuccessModal('Configuration Updated', `Server "${newConfig.name}" has been successfully updated with the new configuration.`);
             
         } catch (error) {
-            console.error('Failed to update container configuration:', error);
+            logger.error('Failed to update container configuration:', error);
             Modal.hide();
             this.showErrorModal('Update Failed', `Failed to update container configuration: ${error.message || error}`);
             
             // Try to restart the original container if it exists
             try {
-                console.log('Attempting to restart original container...');
+                logger.debug('Attempting to restart original container...');
                 await window.go.main.App.StartContainer(serverId);
             } catch (restartError) {
-                console.error('Failed to restart original container:', restartError);
+                logger.error('Failed to restart original container:', restartError);
             }
         }
     }
@@ -1375,7 +1376,7 @@ export class Servers {
         try {
             configuredServers = await window.go.main.App.GetConfiguredServers();
         } catch (error) {
-            console.warn('Failed to get configured servers for port checking:', error);
+            logger.warning('Failed to get configured servers for port checking:', error);
         }
 
         const usedPorts = new Set(configuredServers.map(server => server.port));
@@ -1401,7 +1402,7 @@ export class Servers {
         try {
             serverDefaults = await window.go.main.App.GetServerDefaults();
         } catch (error) {
-            console.warn('Failed to load server defaults, using fallbacks:', error);
+            logger.warning('Failed to load server defaults, using fallbacks:', error);
             serverDefaults = {
                 auto_start: false,
                 default_port: 8000,
@@ -1470,23 +1471,23 @@ export class Servers {
                 }
             };
 
-            console.log('Creating container with config:', config);
+            logger.debug('Creating container with config:', config);
             const containerId = await window.go.main.App.CreateContainer(config);
-            console.log('Container created successfully with ID:', containerId);
+            logger.debug('Container created successfully with ID:', containerId);
             
             // Start the container only if auto-start is enabled in server defaults
             const shouldAutoStart = serverDefaults.auto_start;
             if (shouldAutoStart) {
-                console.log('Auto-start enabled, starting container:', containerId);
+                logger.debug('Auto-start enabled, starting container:', containerId);
                 await window.go.main.App.StartContainer(containerId);
-                console.log('Container started automatically');
+                logger.debug('Container started automatically');
             } else {
-                console.log('Auto-start disabled, container created but not started');
+                logger.debug('Auto-start disabled, container created but not started');
             }
             
             // Create a configured server entry for this container
             try {
-                console.log('Creating configured server entry');
+                logger.debug('Creating configured server entry');
                 await window.go.main.App.CreateConfiguredServer(
                     server.id,
                     containerName,
@@ -1495,73 +1496,73 @@ export class Servers {
                     environment,
                     volumes
                 );
-                console.log('Configured server entry created successfully');
+                logger.debug('Configured server entry created successfully');
             } catch (configError) {
-                console.warn('Failed to create configured server entry:', configError);
+                logger.warning('Failed to create configured server entry:', configError);
                 // Don't fail the whole operation - container was created successfully
             }
             
             Modal.hide();
-            console.log('Refreshing servers list...');
+            logger.debug('Refreshing servers list...');
             await this.loadServers(); // Refresh the list
             
             // Check container status and show appropriate modal
-            console.log('Checking container creation result...');
+            logger.debug('Checking container creation result...');
             await this.showContainerCreationResult(containerId, containerName, shouldAutoStart);
         } catch (error) {
-            console.error('Failed to create container:', error);
+            logger.error('Failed to create container:', error);
             this.showErrorModal('Create MCP Server Failed', `Failed to create MCP Server: ${error.message || error}`);
         }
     }
 
     async showContainerCreationResult(containerId, containerName, shouldAutoStart = true) {
         try {
-            console.log(`Checking container creation result for ID: ${containerId}, Name: ${containerName}, AutoStart: ${shouldAutoStart}`);
+            logger.debug(`Checking container creation result for ID: ${containerId}, Name: ${containerName}, AutoStart: ${shouldAutoStart}`);
             
             // Get managed containers to verify the container exists and get its status
             const containers = await window.go.main.App.GetManagedContainers();
             const container = containers.find(c => c.id === containerId || c.id.startsWith(containerId) || containerId.startsWith(c.id));
             
             if (!container) {
-                console.error('Container not found in managed containers list');
-                console.log('Available container IDs:', containers.map(c => c.id));
-                console.log('Searching container ID:', containerId);
+                logger.error('Container not found in managed containers list');
+                logger.debug('Available container IDs:', containers.map(c => c.id));
+                logger.debug('Searching container ID:', containerId);
                 
                 // Try to get ALL containers (not just managed ones) for debugging
                 try {
-                    console.log('Attempting to get container logs to verify container exists...');
+                    logger.debug('Attempting to get container logs to verify container exists...');
                     const logs = await window.go.main.App.GetContainerLogs(containerId, 10);
-                    console.log('Container logs retrieved successfully, container exists but not in managed list');
+                    logger.debug('Container logs retrieved successfully, container exists but not in managed list');
                     
                     // Show a different error message with more debugging information
                     this.showContainerNotInManagedListModal(containerId, containerName, containers);
                 } catch (logError) {
-                    console.error('Container logs also failed, container may not exist:', logError);
+                    logger.error('Container logs also failed, container may not exist:', logError);
                     this.showContainerNotFoundModal(containerId, containerName, containers);
                 }
                 return;
             }
 
-            console.log('Container found:', container);
+            logger.debug('Container found:', container);
             const isRunning = container.status === 'running';
             
             if (isRunning) {
-                console.log('Container is running successfully');
+                logger.debug('Container is running successfully');
                 // Container is running successfully
                 this.showSuccessModal('MCP Server Created', `MCP Server "${containerName}" has been created and is running successfully. Container ID: ${containerId.substring(0, 12)}`);
             } else if (!shouldAutoStart && (container.status === 'created' || container.status === 'exited')) {
-                console.log('Container created but not started (auto-start disabled)');
+                logger.debug('Container created but not started (auto-start disabled)');
                 // Container was created but not started because auto-start is disabled
                 this.showSuccessModal('MCP Server Created', `MCP Server "${containerName}" has been created successfully but not started (auto-start is disabled). You can start it manually from the servers list. Container ID: ${containerId.substring(0, 12)}`);
             } else {
-                console.log('Container has issues, getting logs...');
+                logger.debug('Container has issues, getting logs...');
                 // Container has issues, show detailed modal with logs
                 const logs = await window.go.main.App.GetContainerLogs(containerId, 50);
-                console.log('Container logs retrieved for troubleshooting');
+                logger.debug('Container logs retrieved for troubleshooting');
                 this.showContainerIssueModal(containerName, container, logs);
             }
         } catch (error) {
-            console.error('Failed to check container status:', error);
+            logger.error('Failed to check container status:', error);
             // Fallback to basic success message
             const statusMessage = shouldAutoStart 
                 ? `MCP Server "${containerName}" has been created. Container ID: ${containerId.substring(0, 12)}`

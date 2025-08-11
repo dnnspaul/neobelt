@@ -1,6 +1,7 @@
 import Modal from '../components/Modal.js';
 import { getStatusBgColor, getStatusTextColor, getStatusBadgeColor } from './servers-helpers.js';
 import { renderServerActionButtons } from './servers-templates.js';
+import { logger } from '../utils/logger.js';
 
 export async function loadServers() {
     this.loading = true;
@@ -25,7 +26,7 @@ export async function loadServers() {
             );
         });
     } catch (error) {
-        console.error('Failed to load servers:', error);
+        logger.error('Failed to load servers:', error);
         this.servers = [];
     }
 
@@ -57,10 +58,15 @@ export async function refreshServersWithoutLoading() {
             );
         });
         
-        // Update UI without loading state
-        this.updateUI();
+        // Update UI without loading state (only if no modal is open)
+        const modalOverlay = document.getElementById('modal-overlay');
+        if (!modalOverlay) {
+            this.updateUI();
+        } else {
+            logger.debug('Modal detected, skipping UI update in refreshServersWithoutLoading');
+        }
     } catch (error) {
-        console.error('Failed to refresh servers:', error);
+        logger.error('Failed to refresh servers:', error);
     }
 }
 
@@ -72,12 +78,16 @@ export async function startServer(serverId) {
         this.setButtonLoading(button, 'Starting...');
         
         await window.go.main.App.StartContainer(serverId);
-        await this.refreshServersWithoutLoading(); // Refresh without showing loading state
+        
+        // Reset button state before refresh to avoid animation interruption
+        this.resetButtonLoading(button, 'Start');
+        
+        // Refresh to get updated server state
+        await this.refreshServersWithoutLoading();
     } catch (error) {
-        console.error('Failed to start server:', error);
+        logger.error('Failed to start server:', error);
         this.showErrorModal('Start Server Failed', `Failed to start server: ${error.message || error}`);
-    } finally {
-        // Reset button state (will be updated by refresh)
+        // Reset button state on error
         this.resetButtonLoading(button, 'Start');
     }
 }
@@ -90,12 +100,16 @@ export async function stopServer(serverId) {
         this.setButtonLoading(button, 'Stopping...');
         
         await window.go.main.App.StopContainer(serverId);
-        await this.refreshServersWithoutLoading(); // Refresh without showing loading state
+        
+        // Reset button state before refresh to avoid animation interruption
+        this.resetButtonLoading(button, 'Stop');
+        
+        // Refresh to get updated server state
+        await this.refreshServersWithoutLoading(); 
     } catch (error) {
-        console.error('Failed to stop server:', error);
+        logger.error('Failed to stop server:', error);
         this.showErrorModal('Stop Server Failed', `Failed to stop server: ${error.message || error}`);
-    } finally {
-        // Reset button state (will be updated by refresh)
+        // Reset button state on error
         this.resetButtonLoading(button, 'Stop');
     }
 }
@@ -108,12 +122,16 @@ export async function restartServer(serverId) {
         this.setButtonLoading(button, 'Restarting...');
         
         await window.go.main.App.RestartContainer(serverId);
-        await this.refreshServersWithoutLoading(); // Refresh without showing loading state
+        
+        // Reset button state before refresh to avoid animation interruption
+        this.resetButtonLoading(button, 'Restart');
+        
+        // Refresh to get updated server state
+        await this.refreshServersWithoutLoading();
     } catch (error) {
-        console.error('Failed to restart server:', error);
+        logger.error('Failed to restart server:', error);
         this.showErrorModal('Restart Server Failed', `Failed to restart server: ${error.message || error}`);
-    } finally {
-        // Reset button state (will be updated by refresh)
+        // Reset button state on error
         this.resetButtonLoading(button, 'Restart');
     }
 }
@@ -126,7 +144,7 @@ export async function debugServer(serverId) {
         
         this.showContainerIssueModal(containerName, container, logs);
     } catch (error) {
-        console.error('Failed to get container logs:', error);
+        logger.error('Failed to get container logs:', error);
         this.showErrorModal('Debug Server Failed', `Failed to get container logs: ${error.message || error}`);
     }
 }
@@ -139,6 +157,19 @@ export function updateUI() {
         if (currentHash !== 'servers') {
             // Stop refresh and don't update UI if we're no longer on the servers page
             this.stopResourceUsageRefresh();
+            return;
+        }
+        
+        // Check if a modal is currently open before re-rendering to prevent modal from closing
+        const modalOverlay = document.getElementById('modal-overlay');
+        if (modalOverlay) {
+            logger.debug('Modal detected, skipping UI update to preserve modal');
+            // Only start refresh if we have servers to monitor
+            if (this.servers && this.servers.length > 0) {
+                this.startResourceUsageRefresh();
+            } else {
+                this.stopResourceUsageRefresh();
+            }
             return;
         }
         
@@ -162,6 +193,13 @@ export async function refreshResourceUsage() {
     if (currentHash !== 'servers') {
         // Stop the refresh interval if we're no longer on the servers page
         this.stopResourceUsageRefresh();
+        return;
+    }
+    
+    // Check if a modal is currently open before refreshing to prevent modal from closing
+    const modalOverlay = document.getElementById('modal-overlay');
+    if (modalOverlay) {
+        logger.debug('Modal detected, skipping resource refresh to preserve modal');
         return;
     }
     
@@ -198,7 +236,7 @@ export async function refreshResourceUsage() {
             }
         });
     } catch (error) {
-        console.error('Failed to refresh server data:', error);
+        logger.error('Failed to refresh server data:', error);
     } finally {
         this.refreshing = false;
     }

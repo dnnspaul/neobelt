@@ -5,10 +5,11 @@ import { Dashboard } from './pages/Dashboard.js';
 import { Servers } from './pages/Servers.js';
 import { Registry } from './pages/Registry.js';
 import { Settings } from './pages/Settings.js';
-import { Help } from './pages/Help.js';
 import DockerStatusModal from './components/DockerStatusModal.js';
 import { EventsOn } from '../wailsjs/runtime/runtime.js';
 import { GetAppConfig } from '../wailsjs/go/main/App.js';
+import { initLogger, logger } from './utils/logger.js';
+import * as AppModule from '../wailsjs/go/main/App.js';
 
 class App {
     constructor() {
@@ -17,8 +18,7 @@ class App {
             dashboard: new Dashboard(),
             servers: new Servers(),
             registry: new Registry(),
-            settings: new Settings(),
-            help: new Help()
+            settings: new Settings()
         };
         
         this.currentPage = null;
@@ -26,6 +26,8 @@ class App {
     }
 
     async init() {
+        // Initialize centralized logging
+        initLogger(AppModule);
         this.setupRoutes();
         this.setupDockerStatusListener();
         await this.loadStartupPage();
@@ -39,13 +41,12 @@ class App {
         router.addRoute('servers', () => this.showPage('servers'));
         router.addRoute('registry', () => this.showPage('registry'));
         router.addRoute('settings', () => this.showPage('settings'));
-        router.addRoute('help', () => this.showPage('help'));
     }
 
     setupDockerStatusListener() {
         // Listen for Docker status updates from the backend
         EventsOn('docker_status_update', (data) => {
-            console.log('Docker status update:', data);
+            logger.debug('Docker status update:', JSON.stringify(data));
             if (data && data.type && data.status) {
                 DockerStatusModal.show(data.type, data.status);
             }
@@ -58,15 +59,15 @@ class App {
             const startupPage = appConfig.startup_page || 'dashboard';
             
             // Validate that the startup page is a valid route
-            const validRoutes = ['dashboard', 'servers', 'registry', 'settings', 'help'];
+            const validRoutes = ['dashboard', 'servers', 'registry', 'settings'];
             if (validRoutes.includes(startupPage)) {
                 router.setDefaultRoute(startupPage);
             } else {
-                console.warn(`Invalid startup page '${startupPage}', using dashboard`);
+                logger.warning(`Invalid startup page '${startupPage}', using dashboard`);
                 router.setDefaultRoute('dashboard');
             }
         } catch (error) {
-            console.error('Failed to load startup page setting:', error);
+            logger.error('Failed to load startup page setting:', error);
             // Fallback to dashboard if config loading fails
             router.setDefaultRoute('dashboard');
         }
@@ -76,7 +77,7 @@ class App {
         const appElement = document.querySelector('#app');
         
         if (!appElement) {
-            console.error('App: #app element not found in DOM');
+            logger.error('App: #app element not found in DOM');
             return;
         }
         
@@ -131,7 +132,7 @@ async function initApp() {
     try {
         new App();
     } catch (error) {
-        console.error('Error initializing Neobelt application:', error);
+        logger.error('Error initializing Neobelt application:', error);
     }
 }
 

@@ -1,4 +1,5 @@
 import Modal from '../components/Modal.js';
+import { logger } from '../utils/logger.js';
 
 export class Registry {
     constructor() {
@@ -247,7 +248,7 @@ export class Registry {
             try {
                 installedServers = await window.go.main.App.GetInstalledServers();
             } catch (error) {
-                console.warn('Failed to fetch installed servers:', error);
+                logger.warning('Failed to fetch installed servers:', error);
             }
             
             // Create a map of installed Docker images for quick lookup
@@ -285,7 +286,7 @@ export class Registry {
             this.filteredServers = [...this.servers];
             this.filterServers();
         } catch (error) {
-            console.error('Failed to load servers:', error);
+            logger.error('Failed to load servers:', error);
             this.error = error.message || 'Failed to load servers from registry';
         } finally {
             this.loading = false;
@@ -295,6 +296,13 @@ export class Registry {
 
 
     updateUI() {
+        // Check if a modal is currently open before re-rendering to prevent modal from closing
+        const modalOverlay = document.getElementById('modal-overlay');
+        if (modalOverlay) {
+            logger.debug('Modal detected, skipping UI update to preserve modal');
+            return;
+        }
+        
         const mainContent = document.querySelector('.flex-1.overflow-y-auto.p-6');
         if (mainContent) {
             mainContent.innerHTML = this.renderContent();
@@ -567,7 +575,7 @@ export class Registry {
                 });
             }, 100);
         } catch (error) {
-            console.error('Failed to load registries:', error);
+            logger.error('Failed to load registries:', error);
         }
     }
 
@@ -887,7 +895,7 @@ export class Registry {
             }, 2000);
 
         } catch (error) {
-            console.error('Installation failed:', error);
+            logger.error('Installation failed:', error);
             addLogEntry(`Installation failed: ${error.message}`, 'error');
             
             // Show error state and enable retry
@@ -1096,7 +1104,7 @@ export class Registry {
                                     removedConfiguredServers = true;
                                 }
                             } catch (configError) {
-                                console.warn('Warning: Failed to remove some configured servers:', configError);
+                                logger.warning('Warning: Failed to remove some configured servers:', configError);
                                 // Continue with uninstall even if configured server removal fails
                             }
                         }
@@ -1118,7 +1126,7 @@ export class Registry {
                         throw new Error('Installed server not found');
                     }
                 } catch (error) {
-                    console.error('Uninstall failed:', error);
+                    logger.error('Uninstall failed:', error);
                     
                     // Reset button state
                     confirmBtn.disabled = false;
@@ -1367,7 +1375,7 @@ export class Registry {
                         </svg>
                         <div class="ml-3">
                             <h4 class="text-sm font-medium text-blue-800">Registry Format</h4>
-                            <p class="mt-1 text-sm text-blue-700">The registry URL should point to a JSON file containing server definitions compatible with the MCP registry format.</p>
+                            <p class="mt-1 text-sm text-blue-700">The registry URL should point to a JSON file containing server definitions compatible with the MCP registry format. <button type="button" onclick="window.runtime.BrowserOpenURL('https://github.com/dnnspaul/neobelt/blob/main/docs/registry-example.json')" class="font-medium text-blue-800 hover:text-blue-900 underline cursor-pointer bg-transparent border-none p-0">View example registry format</button>.</p>
                         </div>
                     </div>
                 </div>

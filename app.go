@@ -1654,3 +1654,42 @@ func (a *App) SelectImportFile() (string, error) {
 	LogInfo("Selected import file: %s", filePath)
 	return string(fileContent), nil
 }
+
+// GetRecentLogMessages returns the most recent log messages for the dashboard
+func (a *App) GetRecentLogMessages(count int) ([]LogMessage, error) {
+	if count <= 0 {
+		count = 10 // Default to last 10 messages
+	}
+	if count > 100 {
+		count = 100 // Cap at 100 messages
+	}
+	
+	return GetRecentLogMessages(count), nil
+}
+
+// JavaScript logging bindings
+
+// JSLogInfo logs an info message from JavaScript
+func (a *App) JSLogInfo(message string) {
+	LogInfo("[JS] %s", message)
+}
+
+// JSLogError logs an error message from JavaScript
+func (a *App) JSLogError(message string) {
+	LogError("[JS] %s", message)
+}
+
+// JSLogDebug logs a debug message from JavaScript
+func (a *App) JSLogDebug(message string) {
+	LogDebug("[JS] %s", message)
+}
+
+// JSLogWarning logs a warning message from JavaScript
+func (a *App) JSLogWarning(message string) {
+	LogWarning("[JS] %s", message)
+}
+
+// JSGetDebugMode returns the current debug mode status for JavaScript
+func (a *App) JSGetDebugMode() bool {
+	return GetDebugMode()
+}

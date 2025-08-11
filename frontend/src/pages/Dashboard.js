@@ -1,13 +1,18 @@
 import Modal from '../components/Modal.js';
+import { logger } from '../utils/logger.js';
 
 export class Dashboard {
     constructor() {
-        this.mockServers = [
-            { id: 1, name: 'File System Server', status: 'running', uptime: '2d 4h', memory: '45MB', cpu: '2%' },
-            { id: 2, name: 'Database Connector', status: 'running', uptime: '1d 12h', memory: '32MB', cpu: '1%' },
-            { id: 3, name: 'Web Scraper', status: 'stopped', uptime: '0h', memory: '0MB', cpu: '0%' },
-            { id: 4, name: 'Email Handler', status: 'error', uptime: '0h', memory: '0MB', cpu: '0%' }
-        ];
+        this.servers = [];
+        this.serverStats = {
+            total: 0,
+            running: 0,
+            stopped: 0,
+            errors: 0
+        };
+        this.recentLogs = [];
+        this.loading = true; // Start with loading state for better UX
+        this.refreshInterval = null;
     }
 
     render() {
@@ -28,12 +33,6 @@ export class Dashboard {
                                     </svg>
                                     Refresh
                                 </button>
-                                <button id="add-server-btn" class="px-4 py-2 text-sm font-medium text-white bg-primary-600 border border-transparent rounded-md hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500">
-                                    <svg class="w-4 h-4 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
-                                    </svg>
-                                    Add Server
-                                </button>
                             </div>
                         </div>
                     </div>
@@ -47,7 +46,7 @@ export class Dashboard {
                             <div class="flex items-center">
                                 <div class="flex-1">
                                     <p class="text-sm font-medium text-gray-600">Total Servers</p>
-                                    <p class="text-3xl font-bold text-gray-900">4</p>
+                                    <p class="text-3xl font-bold text-gray-900">${this.serverStats.total}</p>
                                 </div>
                                 <div class="w-12 h-12 bg-primary-100 rounded-lg flex items-center justify-center">
                                     <svg class="w-6 h-6 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -61,7 +60,7 @@ export class Dashboard {
                             <div class="flex items-center">
                                 <div class="flex-1">
                                     <p class="text-sm font-medium text-gray-600">Running</p>
-                                    <p class="text-3xl font-bold text-green-600">2</p>
+                                    <p class="text-3xl font-bold text-green-600">${this.serverStats.running}</p>
                                 </div>
                                 <div class="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
                                     <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -75,7 +74,7 @@ export class Dashboard {
                             <div class="flex items-center">
                                 <div class="flex-1">
                                     <p class="text-sm font-medium text-gray-600">Stopped</p>
-                                    <p class="text-3xl font-bold text-gray-500">1</p>
+                                    <p class="text-3xl font-bold text-gray-500">${this.serverStats.stopped}</p>
                                 </div>
                                 <div class="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center">
                                     <svg class="w-6 h-6 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -89,7 +88,7 @@ export class Dashboard {
                             <div class="flex items-center">
                                 <div class="flex-1">
                                     <p class="text-sm font-medium text-gray-600">Errors</p>
-                                    <p class="text-3xl font-bold text-red-600">1</p>
+                                    <p class="text-3xl font-bold text-red-600">${this.serverStats.errors}</p>
                                 </div>
                                 <div class="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
                                     <svg class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -100,7 +99,7 @@ export class Dashboard {
                         </div>
                     </div>
 
-                    <!-- Recent Activity -->
+                    <!-- Recent Logs -->
                     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
                         <!-- Server Status -->
                         <div class="bg-white rounded-lg shadow-sm border border-gray-200">
@@ -108,117 +107,25 @@ export class Dashboard {
                                 <h2 class="text-lg font-semibold text-gray-900">Server Status</h2>
                             </div>
                             <div class="p-6">
-                                <div class="space-y-4">
-                                    ${this.mockServers.map(server => `
-                                        <div class="flex items-center justify-between p-4 rounded-lg border border-gray-200">
-                                            <div class="flex items-center space-x-3">
-                                                <div class="w-3 h-3 rounded-full ${this.getStatusColor(server.status)}"></div>
-                                                <div>
-                                                    <p class="font-medium text-gray-900">${server.name}</p>
-                                                    <p class="text-sm text-gray-600">Uptime: ${server.uptime}</p>
-                                                </div>
-                                            </div>
-                                            <div class="text-right">
-                                                <p class="text-sm text-gray-600">CPU: ${server.cpu}</p>
-                                                <p class="text-sm text-gray-600">Memory: ${server.memory}</p>
-                                            </div>
-                                        </div>
-                                    `).join('')}
+                                <div class="space-y-4" id="server-status-list">
+                                    ${this.renderServerStatus()}
                                 </div>
                             </div>
                         </div>
 
-                        <!-- Recent Activity -->
+                        <!-- Recent Logs -->
                         <div class="bg-white rounded-lg shadow-sm border border-gray-200">
                             <div class="px-6 py-4 border-b border-gray-200">
-                                <h2 class="text-lg font-semibold text-gray-900">Recent Activity</h2>
+                                <h2 class="text-lg font-semibold text-gray-900">Recent Logs</h2>
                             </div>
                             <div class="p-6">
-                                <div class="space-y-4">
-                                    <div class="flex items-start space-x-3">
-                                        <div class="w-2 h-2 bg-green-500 rounded-full mt-2"></div>
-                                        <div>
-                                            <p class="text-sm text-gray-900">File System Server started</p>
-                                            <p class="text-xs text-gray-500">2 hours ago</p>
-                                        </div>
-                                    </div>
-                                    <div class="flex items-start space-x-3">
-                                        <div class="w-2 h-2 bg-red-500 rounded-full mt-2"></div>
-                                        <div>
-                                            <p class="text-sm text-gray-900">Email Handler encountered an error</p>
-                                            <p class="text-xs text-gray-500">4 hours ago</p>
-                                        </div>
-                                    </div>
-                                    <div class="flex items-start space-x-3">
-                                        <div class="w-2 h-2 bg-yellow-500 rounded-full mt-2"></div>
-                                        <div>
-                                            <p class="text-sm text-gray-900">Web Scraper stopped</p>
-                                            <p class="text-xs text-gray-500">6 hours ago</p>
-                                        </div>
-                                    </div>
-                                    <div class="flex items-start space-x-3">
-                                        <div class="w-2 h-2 bg-green-500 rounded-full mt-2"></div>
-                                        <div>
-                                            <p class="text-sm text-gray-900">Database Connector updated</p>
-                                            <p class="text-xs text-gray-500">1 day ago</p>
-                                        </div>
-                                    </div>
+                                <div class="space-y-4 max-h-96 overflow-y-auto" id="recent-logs-list">
+                                    ${this.renderRecentLogs()}
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Quick Actions -->
-                    <div class="bg-white rounded-lg shadow-sm border border-gray-200">
-                        <div class="px-6 py-4 border-b border-gray-200">
-                            <h2 class="text-lg font-semibold text-gray-900">Quick Actions</h2>
-                        </div>
-                        <div class="p-6">
-                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <button id="browse-registry-btn" class="p-4 text-left border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-                                    <div class="flex items-center space-x-3">
-                                        <div class="w-10 h-10 bg-primary-100 rounded-lg flex items-center justify-center">
-                                            <svg class="w-5 h-5 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-                                            </svg>
-                                        </div>
-                                        <div>
-                                            <p class="font-medium text-gray-900">Browse Registry</p>
-                                            <p class="text-sm text-gray-600">Find new MCP servers</p>
-                                        </div>
-                                    </div>
-                                </button>
-
-                                <button id="claude-setup-btn" class="p-4 text-left border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-                                    <div class="flex items-center space-x-3">
-                                        <div class="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                                            <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path>
-                                            </svg>
-                                        </div>
-                                        <div>
-                                            <p class="font-medium text-gray-900">Configure Claude</p>
-                                            <p class="text-sm text-gray-600">Set up Claude Desktop integration</p>
-                                        </div>
-                                    </div>
-                                </button>
-
-                                <button id="system-health-btn" class="p-4 text-left border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-                                    <div class="flex items-center space-x-3">
-                                        <div class="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
-                                            <svg class="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
-                                            </svg>
-                                        </div>
-                                        <div>
-                                            <p class="font-medium text-gray-900">System Health</p>
-                                            <p class="text-sm text-gray-600">Monitor system resources</p>
-                                        </div>
-                                    </div>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
                 </div>
             </div>
         `;
@@ -226,40 +133,334 @@ export class Dashboard {
 
     attachEventListeners() {
         const refreshBtn = document.getElementById('refresh-btn');
-        const addServerBtn = document.getElementById('add-server-btn');
-        const browseRegistryBtn = document.getElementById('browse-registry-btn');
-        const claudeSetupBtn = document.getElementById('claude-setup-btn');
-        const systemHealthBtn = document.getElementById('system-health-btn');
 
         if (refreshBtn) {
             refreshBtn.addEventListener('click', () => {
+                logger.debug('Refresh button clicked');
                 this.refreshData();
             });
         }
 
-        if (addServerBtn) {
-            addServerBtn.addEventListener('click', () => {
-                this.showAddServerModal();
-            });
+        // Load initial data and start auto-refresh
+        this.loadDashboardData();
+        this.startAutoRefresh();
+    }
+
+    async loadDashboardData() {
+        this.loading = true;
+        try {
+            logger.debug('Loading dashboard data...');
+            
+            // Load servers and recent logs in parallel
+            const [servers, recentLogs] = await Promise.all([
+                window.go.main.App.GetManagedContainers(),
+                window.go.main.App.GetRecentLogMessages(100)
+            ]);
+            
+            logger.debug('Loaded servers:', servers.length);
+            logger.debug('Loaded recent logs:', recentLogs.length);
+            
+            this.servers = servers || [];
+            this.recentLogs = recentLogs || [];
+            this.calculateStats();
+            this.updateUI();
+        } catch (error) {
+            logger.error('Failed to load dashboard data:', error);
+            this.servers = [];
+            this.recentLogs = [];
+            this.calculateStats();
+            this.updateUI();
+        }
+        this.loading = false;
+        this.updateUI();
+    }
+
+    async loadServers() {
+        // For compatibility with existing refresh button
+        await this.loadDashboardData();
+    }
+
+    calculateStats() {
+        const stats = {
+            total: this.servers.length,
+            running: 0,
+            stopped: 0,
+            errors: 0
+        };
+
+        this.servers.forEach(server => {
+            switch (server.state) {
+                case 'running':
+                    stats.running++;
+                    break;
+                case 'stopped':
+                    stats.stopped++;
+                    break;
+                case 'error':
+                case 'restarting':
+                    stats.errors++;
+                    break;
+                default:
+                    stats.stopped++;
+                    break;
+            }
+        });
+
+        this.serverStats = stats;
+        logger.debug('Updated server stats:', JSON.stringify(this.serverStats));
+    }
+
+    renderLoadingState() {
+        return `
+            <div class="animate-pulse space-y-4">
+                <div class="flex items-center justify-between p-4 rounded-lg border border-gray-200">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-3 h-3 bg-gray-300 rounded-full"></div>
+                        <div>
+                            <div class="h-4 bg-gray-300 rounded w-24 mb-2"></div>
+                            <div class="h-3 bg-gray-300 rounded w-16"></div>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <div class="h-3 bg-gray-300 rounded w-12 mb-1"></div>
+                        <div class="h-3 bg-gray-300 rounded w-16"></div>
+                    </div>
+                </div>
+                <div class="flex items-center justify-between p-4 rounded-lg border border-gray-200">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-3 h-3 bg-gray-300 rounded-full"></div>
+                        <div>
+                            <div class="h-4 bg-gray-300 rounded w-32 mb-2"></div>
+                            <div class="h-3 bg-gray-300 rounded w-20"></div>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <div class="h-3 bg-gray-300 rounded w-12 mb-1"></div>
+                        <div class="h-3 bg-gray-300 rounded w-16"></div>
+                    </div>
+                </div>
+                <div class="flex items-center justify-between p-4 rounded-lg border border-gray-200">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-3 h-3 bg-gray-300 rounded-full"></div>
+                        <div>
+                            <div class="h-4 bg-gray-300 rounded w-28 mb-2"></div>
+                            <div class="h-3 bg-gray-300 rounded w-18"></div>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <div class="h-3 bg-gray-300 rounded w-12 mb-1"></div>
+                        <div class="h-3 bg-gray-300 rounded w-16"></div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    renderLogsLoadingState() {
+        return `
+            <div class="animate-pulse space-y-4">
+                <div class="flex items-start space-x-3">
+                    <div class="w-2 h-2 bg-gray-300 rounded-full mt-2 flex-shrink-0"></div>
+                    <div class="min-w-0 flex-1">
+                        <div class="h-4 bg-gray-300 rounded w-3/4 mb-1"></div>
+                        <div class="h-3 bg-gray-300 rounded w-16"></div>
+                    </div>
+                </div>
+                <div class="flex items-start space-x-3">
+                    <div class="w-2 h-2 bg-gray-300 rounded-full mt-2 flex-shrink-0"></div>
+                    <div class="min-w-0 flex-1">
+                        <div class="h-4 bg-gray-300 rounded w-2/3 mb-1"></div>
+                        <div class="h-3 bg-gray-300 rounded w-20"></div>
+                    </div>
+                </div>
+                <div class="flex items-start space-x-3">
+                    <div class="w-2 h-2 bg-gray-300 rounded-full mt-2 flex-shrink-0"></div>
+                    <div class="min-w-0 flex-1">
+                        <div class="h-4 bg-gray-300 rounded w-5/6 mb-1"></div>
+                        <div class="h-3 bg-gray-300 rounded w-24"></div>
+                    </div>
+                </div>
+                <div class="flex items-start space-x-3">
+                    <div class="w-2 h-2 bg-gray-300 rounded-full mt-2 flex-shrink-0"></div>
+                    <div class="min-w-0 flex-1">
+                        <div class="h-4 bg-gray-300 rounded w-1/2 mb-1"></div>
+                        <div class="h-3 bg-gray-300 rounded w-18"></div>
+                    </div>
+                </div>
+                <div class="flex items-start space-x-3">
+                    <div class="w-2 h-2 bg-gray-300 rounded-full mt-2 flex-shrink-0"></div>
+                    <div class="min-w-0 flex-1">
+                        <div class="h-4 bg-gray-300 rounded w-4/5 mb-1"></div>
+                        <div class="h-3 bg-gray-300 rounded w-22"></div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    renderServerStatus() {
+        if (this.loading) {
+            return this.renderLoadingState();
+        }
+        
+        if (this.servers.length === 0) {
+            return `
+                <div class="text-center py-8">
+                    <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
+                    </svg>
+                    <h3 class="mt-2 text-sm font-medium text-gray-900">No servers</h3>
+                    <p class="mt-1 text-sm text-gray-500">Get started by adding a new server.</p>
+                </div>
+            `;
         }
 
-        if (browseRegistryBtn) {
-            browseRegistryBtn.addEventListener('click', () => {
-                window.location.hash = 'registry';
-            });
+        return this.servers.map(server => `
+            <div class="flex items-center justify-between p-4 rounded-lg border border-gray-200">
+                <div class="flex items-center space-x-3">
+                    <div class="w-3 h-3 rounded-full ${this.getStatusColor(server.state)}"></div>
+                    <div>
+                        <p class="font-medium text-gray-900">${server.display_name || server.name}</p>
+                        <p class="text-sm text-gray-600">Uptime: ${server.uptime}</p>
+                    </div>
+                </div>
+                <div class="text-right">
+                    <p class="text-sm text-gray-600">CPU: ${server.cpu}</p>
+                    <p class="text-sm text-gray-600">Memory: ${server.memory}</p>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    renderRecentLogs() {
+        if (this.loading) {
+            return this.renderLogsLoadingState();
+        }
+        
+        if (this.recentLogs.length === 0) {
+            return `
+                <div class="text-center py-8">
+                    <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                    <h3 class="mt-2 text-sm font-medium text-gray-900">No recent logs</h3>
+                    <p class="mt-1 text-sm text-gray-500">Logs will appear here as they happen.</p>
+                </div>
+            `;
         }
 
-        if (claudeSetupBtn) {
-            claudeSetupBtn.addEventListener('click', () => {
-                this.showClaudeSetupModal();
-            });
+        // Sort logs by timestamp descending (newest first)
+        const sortedLogs = [...this.recentLogs].sort((a, b) => {
+            return new Date(b.timestamp) - new Date(a.timestamp);
+        });
+
+        return sortedLogs.map(log => `
+            <div class="flex items-start space-x-3">
+                <div class="w-2 h-2 ${this.getLogLevelColor(log.level)} rounded-full mt-2 flex-shrink-0"></div>
+                <div class="min-w-0 flex-1">
+                    <p class="text-sm text-gray-900 break-words">${this.escapeHtml(log.message)}</p>
+                    <p class="text-xs text-gray-500">${this.formatRelativeTime(log.timestamp)}</p>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    getLogLevelColor(level) {
+        switch (level) {
+            case 0: // Info
+                return 'bg-blue-500';
+            case 1: // Error
+                return 'bg-red-500';
+            case 2: // Debug
+                return 'bg-gray-500';
+            case 3: // Warning
+                return 'bg-yellow-500';
+            default:
+                return 'bg-gray-400';
+        }
+    }
+
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    formatRelativeTime(timestamp) {
+        const now = new Date();
+        const logTime = new Date(timestamp);
+        const diffMs = now - logTime;
+        const diffSeconds = Math.floor(diffMs / 1000);
+        const diffMinutes = Math.floor(diffSeconds / 60);
+        const diffHours = Math.floor(diffMinutes / 60);
+        const diffDays = Math.floor(diffHours / 24);
+
+        if (diffSeconds < 60) {
+            return diffSeconds <= 1 ? 'just now' : `${diffSeconds} seconds ago`;
+        } else if (diffMinutes < 60) {
+            return diffMinutes === 1 ? '1 minute ago' : `${diffMinutes} minutes ago`;
+        } else if (diffHours < 24) {
+            return diffHours === 1 ? '1 hour ago' : `${diffHours} hours ago`;
+        } else {
+            return diffDays === 1 ? '1 day ago' : `${diffDays} days ago`;
+        }
+    }
+
+    updateUI() {
+        // Update statistics in the cards
+        const totalEl = document.querySelector('.text-3xl.font-bold.text-gray-900');
+        if (totalEl) totalEl.textContent = this.serverStats.total;
+
+        const runningEl = document.querySelector('.text-3xl.font-bold.text-green-600');
+        if (runningEl) runningEl.textContent = this.serverStats.running;
+
+        const stoppedEl = document.querySelector('.text-3xl.font-bold.text-gray-500');
+        if (stoppedEl) stoppedEl.textContent = this.serverStats.stopped;
+
+        const errorsEl = document.querySelector('.text-3xl.font-bold.text-red-600');
+        if (errorsEl) errorsEl.textContent = this.serverStats.errors;
+
+        // Update server status list
+        const serverStatusList = document.getElementById('server-status-list');
+        if (serverStatusList) {
+            serverStatusList.innerHTML = this.renderServerStatus();
         }
 
-        if (systemHealthBtn) {
-            systemHealthBtn.addEventListener('click', () => {
-                this.showSystemHealthModal();
-            });
+        // Update recent logs list
+        const recentLogsList = document.getElementById('recent-logs-list');
+        if (recentLogsList) {
+            recentLogsList.innerHTML = this.renderRecentLogs();
         }
+    }
+
+    startAutoRefresh() {
+        // Refresh every 5 seconds
+        this.refreshInterval = setInterval(() => {
+            this.refreshData();
+        }, 5000);
+    }
+
+    stopAutoRefresh() {
+        if (this.refreshInterval) {
+            clearInterval(this.refreshInterval);
+            this.refreshInterval = null;
+        }
+    }
+
+    async refreshData() {
+        logger.debug('refreshData called');
+        // Check if a modal is currently open before refreshing to prevent modal from closing
+        const modalOverlay = document.getElementById('modal-overlay');
+        if (modalOverlay) {
+            logger.debug('Modal detected, skipping dashboard refresh to preserve modal');
+            return;
+        }
+        await this.loadDashboardData();
+    }
+
+    // Add cleanup method
+    cleanup() {
+        this.stopAutoRefresh();
     }
 
     getStatusColor(status) {
@@ -270,140 +471,13 @@ export class Dashboard {
                 return 'bg-gray-400';
             case 'error':
                 return 'bg-red-500';
+            case 'restarting':
+                return 'bg-yellow-500';
             default:
                 return 'bg-gray-400';
         }
     }
 
-    refreshData() {
-        console.log('Refreshing dashboard data...');
-    }
 
-    showAddServerModal() {
-        const content = `
-            <div class="space-y-4">
-                <p class="text-gray-600">Choose how you want to add a new MCP server:</p>
-                <div class="grid grid-cols-1 gap-3">
-                    <button class="p-4 text-left border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-                        <div class="flex items-center space-x-3">
-                            <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-                            </svg>
-                            <div>
-                                <p class="font-medium text-gray-900">Browse Registry</p>
-                                <p class="text-sm text-gray-600">Install from official registry</p>
-                            </div>
-                        </div>
-                    </button>
-                    <button class="p-4 text-left border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-                        <div class="flex items-center space-x-3">
-                            <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
-                            </svg>
-                            <div>
-                                <p class="font-medium text-gray-900">Manual Installation</p>
-                                <p class="text-sm text-gray-600">Add custom server configuration</p>
-                            </div>
-                        </div>
-                    </button>
-                </div>
-            </div>
-        `;
 
-        Modal.show(content, {
-            title: 'Add New Server',
-            size: 'md'
-        });
-    }
-
-    showClaudeSetupModal() {
-        const content = `
-            <div class="space-y-4">
-                <p class="text-gray-600">Configure Claude Desktop to work with your MCP servers:</p>
-                <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                    <div class="flex">
-                        <svg class="w-5 h-5 text-yellow-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
-                        </svg>
-                        <div class="ml-3">
-                            <p class="text-sm font-medium text-yellow-800">Claude Desktop not detected</p>
-                            <p class="text-sm text-yellow-700">Please install Claude Desktop first</p>
-                        </div>
-                    </div>
-                </div>
-                <div class="space-y-3">
-                    <button class="w-full p-3 text-left border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-                        <p class="font-medium text-gray-900">Auto-configure</p>
-                        <p class="text-sm text-gray-600">Automatically set up config file</p>
-                    </button>
-                    <button class="w-full p-3 text-left border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-                        <p class="font-medium text-gray-900">Manual setup</p>
-                        <p class="text-sm text-gray-600">Get instructions for manual configuration</p>
-                    </button>
-                </div>
-            </div>
-        `;
-
-        Modal.show(content, {
-            title: 'Claude Desktop Integration',
-            size: 'md'
-        });
-    }
-
-    showSystemHealthModal() {
-        const content = `
-            <div class="space-y-6">
-                <div class="grid grid-cols-2 gap-4">
-                    <div class="bg-green-50 border border-green-200 rounded-lg p-4">
-                        <div class="flex items-center">
-                            <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                            </svg>
-                            <div class="ml-3">
-                                <p class="text-sm font-medium text-green-800">CPU Usage</p>
-                                <p class="text-lg font-bold text-green-900">15%</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="bg-primary-50 border border-primary-200 rounded-lg p-4">
-                        <div class="flex items-center">
-                            <svg class="w-8 h-8 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7c0 2.21-3.582 4-8 4s-8-1.79-8-4z"></path>
-                            </svg>
-                            <div class="ml-3">
-                                <p class="text-sm font-medium text-primary-700">Memory</p>
-                                <p class="text-lg font-bold text-primary-700">77MB</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                    <h4 class="font-medium text-gray-900 mb-3">System Information</h4>
-                    <dl class="grid grid-cols-1 gap-2 text-sm">
-                        <div class="flex justify-between">
-                            <dt class="text-gray-600">Platform:</dt>
-                            <dd class="text-gray-900">macOS</dd>
-                        </div>
-                        <div class="flex justify-between">
-                            <dt class="text-gray-600">Architecture:</dt>
-                            <dd class="text-gray-900">arm64</dd>
-                        </div>
-                        <div class="flex justify-between">
-                            <dt class="text-gray-600">Node.js:</dt>
-                            <dd class="text-gray-900">v20.11.0</dd>
-                        </div>
-                        <div class="flex justify-between">
-                            <dt class="text-gray-600">Docker:</dt>
-                            <dd class="text-gray-900">Available</dd>
-                        </div>
-                    </dl>
-                </div>
-            </div>
-        `;
-
-        Modal.show(content, {
-            title: 'System Health',
-            size: 'md'
-        });
-    }
 }

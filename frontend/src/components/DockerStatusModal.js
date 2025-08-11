@@ -1,5 +1,6 @@
 import Modal from './Modal.js';
 import { CheckDockerStatus, StartDockerDesktop, OpenDockerDesktopDownloadURL } from '../../wailsjs/go/main/App.js';
+import { logger } from '../utils/logger.js';
 
 export class DockerStatusModal {
     constructor() {
@@ -11,6 +12,13 @@ export class DockerStatusModal {
     show(eventType, status) {
         // Prevent multiple modals from showing
         if (this.isShowing) {
+            return;
+        }
+
+        // Check if there's already another modal open - don't override user modals
+        const existingModalOverlay = document.getElementById('modal-overlay');
+        if (existingModalOverlay) {
+            logger.debug('Another modal is already open, skipping Docker status modal to preserve user modal');
             return;
         }
 
@@ -31,7 +39,7 @@ export class DockerStatusModal {
                 this.hide();
                 return;
             default:
-                console.warn('Unknown Docker status event type:', eventType);
+                logger.warning('Unknown Docker status event type:', eventType);
                 this.isShowing = false;
                 return;
         }
@@ -142,7 +150,7 @@ export class DockerStatusModal {
         try {
             await OpenDockerDesktopDownloadURL();
         } catch (error) {
-            console.error('Failed to open Docker Desktop download page:', error);
+            logger.error('Failed to open Docker Desktop download page:', error);
         }
     }
 
@@ -164,7 +172,7 @@ export class DockerStatusModal {
                 this.handleCheckAgain();
             }, 5000);
         } catch (error) {
-            console.error('Failed to start Docker Desktop:', error);
+            logger.error('Failed to start Docker Desktop:', error);
             if (startBtn) {
                 startBtn.disabled = false;
                 startBtn.textContent = 'Yes, Start Docker Desktop';
@@ -200,7 +208,7 @@ export class DockerStatusModal {
                 this.show('docker_not_running', status);
             }
         } catch (error) {
-            console.error('Failed to check Docker status:', error);
+            logger.error('Failed to check Docker status:', error);
         } finally {
             if (checkBtn) {
                 checkBtn.disabled = false;

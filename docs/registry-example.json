@@ -22,8 +22,7 @@
             "interval": "30s"
         },
         "resource_requirements": {
-            "memory": "512MB",
-            "cpu": "0.5"
+            "memory": "512MB"
         },
         "docker_command": "--transport streamable-http --port 9000",
         "environment_variables": {
@@ -102,8 +101,7 @@
         ],
         "health_check": {},
         "resource_requirements": {
-            "memory": "1GB",
-            "cpu": "0.5"
+            "memory": "1GB"
         },
         "docker_command": "node dist/index.js --transport http",
         "environment_variables": {
