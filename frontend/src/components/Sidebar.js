@@ -1,9 +1,28 @@
 import router from '../router.js';
+import { GetAppVersion } from '../../wailsjs/go/main/App.js';
+import { logger } from '../utils/logger.js';
 
 export class Sidebar {
     constructor() {
         // Don't call render or attachEventListeners here
         // They will be called from main App after DOM is ready
+        this.versionText = 'Neobelt DEV BUILD'; // Default value
+    }
+
+    async loadVersion() {
+        try {
+            const versionInfo = await GetAppVersion();
+            if (versionInfo && versionInfo.version) {
+                if (versionInfo.version === 'DEV BUILD') {
+                    this.versionText = 'Neobelt DEV BUILD';
+                } else {
+                    this.versionText = `Neobelt v${versionInfo.version}`;
+                }
+            }
+        } catch (error) {
+            logger.warning('Failed to load version info:', error);
+            // Keep default value
+        }
     }
 
     render() {
@@ -54,7 +73,7 @@ export class Sidebar {
                 <!-- Footer -->
                 <div class="p-4 border-t border-gray-200">
                     <div class="text-xs text-gray-500 text-center">
-                        <span class="selectable-text">Neobelt v1.0.0</span>
+                        <span class="selectable-text">${this.versionText}</span>
                     </div>
                 </div>
             </div>

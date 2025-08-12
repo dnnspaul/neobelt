@@ -1693,3 +1693,8 @@ func (a *App) JSLogWarning(message string) {
 func (a *App) JSGetDebugMode() bool {
 	return GetDebugMode()
 }
+
+// GetAppVersion returns version information for the application
+func (a *App) GetAppVersion() map[string]string {
+	return GetVersionInfo()
+}

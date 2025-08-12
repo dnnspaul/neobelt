@@ -220,7 +220,6 @@ export class Settings {
                                                     <option value="servers" ${this.settings.general.startupPage === 'servers' ? 'selected' : ''}>Servers</option>
                                                     <option value="registry" ${this.settings.general.startupPage === 'registry' ? 'selected' : ''}>Registry</option>
                                                     <option value="settings" ${this.settings.general.startupPage === 'settings' ? 'selected' : ''}>Settings</option>
-                                                    <option value="help" ${this.settings.general.startupPage === 'help' ? 'selected' : ''}>Help</option>
                                                 </select>
                                                 <div class="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
                                                     <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">

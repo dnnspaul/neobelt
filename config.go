@@ -41,11 +41,11 @@ type ServerDefaultsConfig struct {
 
 // RemoteAccessConfig contains remote access settings
 type RemoteAccessConfig struct {
-	RemoteServer   string `json:"remote_server" mapstructure:"remote_server"`
-	Username       string `json:"username" mapstructure:"username"`
-	PrivateKey     string `json:"private_key" mapstructure:"private_key"`
-	PublicKey      string `json:"public_key" mapstructure:"public_key"`
-	KeyGenerated   bool   `json:"key_generated" mapstructure:"key_generated"`
+	RemoteServer string `json:"remote_server" mapstructure:"remote_server"`
+	Username     string `json:"username" mapstructure:"username"`
+	PrivateKey   string `json:"private_key" mapstructure:"private_key"`
+	PublicKey    string `json:"public_key" mapstructure:"public_key"`
+	KeyGenerated bool   `json:"key_generated" mapstructure:"key_generated"`
 }
 
 // InstalledServer represents a server that has been installed (Docker image pulled)
@@ -108,7 +108,7 @@ func NewConfigManager() (*ConfigManager, error) {
 	}
 
 	// Create neobelt config directory
-	neobeltConfigDir := filepath.Join(configDir, "neobelt")
+	neobeltConfigDir := filepath.Join(configDir, "com.dnnspaul.neobelt")
 	if err := os.MkdirAll(neobeltConfigDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create config directory: %w", err)
 	}

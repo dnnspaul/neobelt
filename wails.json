@@ -9,5 +9,10 @@
   "author": {
     "name": "Dennis Paul",
     "email": "dennis@paul.hamburg"
+  },
+  "info": {
+    "productName": "neobelt",
+    "productVersion": "1.0.0",
+    "comments": "MCP-Management Tool"
   }
 }

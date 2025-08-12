@@ -31,7 +31,7 @@ class App {
         this.setupRoutes();
         this.setupDockerStatusListener();
         await this.loadStartupPage();
-        this.render();
+        await this.render();
         // Initialize router after routes are set up
         router.init();
     }
@@ -73,13 +73,16 @@ class App {
         }
     }
 
-    render() {
+    async render() {
         const appElement = document.querySelector('#app');
         
         if (!appElement) {
             logger.error('App: #app element not found in DOM');
             return;
         }
+
+        // Load version before rendering sidebar
+        await this.sidebar.loadVersion();
         
         appElement.innerHTML = `
             ${this.sidebar.render()}

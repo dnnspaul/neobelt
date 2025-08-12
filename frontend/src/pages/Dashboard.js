@@ -157,8 +157,8 @@ export class Dashboard {
                 window.go.main.App.GetRecentLogMessages(100)
             ]);
             
-            logger.debug('Loaded servers:', servers.length);
-            logger.debug('Loaded recent logs:', recentLogs.length);
+            logger.debug('Loaded servers:', servers ? servers.length : 0);
+            logger.debug('Loaded recent logs:', recentLogs ? recentLogs.length : 0);
             
             this.servers = servers || [];
             this.recentLogs = recentLogs || [];

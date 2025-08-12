@@ -40,37 +40,148 @@ jobs:
         with:
           go-version: '1.23'
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-          cache: 'npm'
-          cache-dependency-path: './frontend/package-lock.json'
-
-      - name: Install Wails
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
-
-      - name: Install frontend dependencies
-        run: npm install
-        working-directory: ./frontend
-
-      - name: Build application (Linux)
-        if: matrix.build.os == 'ubuntu-latest'
+      - name: Extract version and build info
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev
-          export PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/share/pkgconfig
-          # Create a symlink for webkit2gtk-4.0 to point to 4.1
-          sudo ln -sf /usr/lib/x86_64-linux-gnu/pkgconfig/webkit2gtk-4.1.pc /usr/lib/x86_64-linux-gnu/pkgconfig/webkit2gtk-4.0.pc
-          wails build -platform linux/amd64 -ldflags "-s -w"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/v}
+          else
+            VERSION="DEV BUILD"
+          fi
+          BUILD_TIME=$(date -u '+%Y-%m-%d_%H:%M:%S')
+          COMMIT_HASH=${GITHUB_SHA:0:7}
+          
+          # Update wails.json productVersion for tagged releases
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            if command -v jq >/dev/null 2>&1; then
+              jq --arg version "$VERSION" '.info.productVersion = $version' wails.json > tmp.json && mv tmp.json wails.json
+            else
+              echo "Warning: jq not found, skipping wails.json update"
+            fi
+          fi
+          
+          # Set for later steps
+          echo "APP_VERSION=$VERSION" >> $GITHUB_ENV
+          echo "BUILD_TIME=$BUILD_TIME" >> $GITHUB_ENV  
+          echo "COMMIT_HASH=$COMMIT_HASH" >> $GITHUB_ENV
+          
+          echo "Building with version: $VERSION"
 
-      - name: Build application (Windows)
-        if: matrix.build.os == 'windows-latest'
-        run: wails build -platform windows/amd64 -ldflags "-s -w"
+      - name: Build application
+        uses: dAppServer/wails-build-action@main
+        with:
+          build-name: ${{ matrix.build.name }}
+          build-platform: ${{ matrix.build.platform }}
+          package: false
+          wails-version: "v2.9.0"
+          go-version: '1.23'
+          ldflags: "-X main.Version='${{ env.APP_VERSION }}' -X main.BuildTime='${{ env.BUILD_TIME }}' -X main.CommitHash='${{ env.COMMIT_HASH }}'"
 
-      - name: Build application (macOS)
-        if: matrix.build.os == 'macos-latest'
-        run: wails build -platform darwin/universal -ldflags "-s -w"
+      # macOS Code Signing and Notarization (only for releases and main branch, not PRs)
+      - name: Setup macOS certificates and code signing
+        if: matrix.build.platform == 'darwin/universal' && (github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'push' && github.ref == 'refs/heads/main'))
+        env:
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_NOTARY_APPLE_ID: ${{ secrets.MACOS_NOTARY_APPLE_ID }}
+          MACOS_NOTARY_TEAM_ID: ${{ secrets.MACOS_NOTARY_TEAM_ID }}
+          MACOS_NOTARY_PASSWORD: ${{ secrets.MACOS_NOTARY_PASSWORD }}
+        run: |
+          # Create temporary directory for certificates
+          CERT_DIR=$(mktemp -d)
+          
+          # Decode and import certificate
+          echo "$MACOS_CERTIFICATE_P12" | base64 --decode > "$CERT_DIR/certificate.p12"
+          
+          # Create temporary keychain
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain"
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+          
+          # Create and setup keychain
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          
+          # Import certificate
+          security import "$CERT_DIR/certificate.p12" \
+            -P "$MACOS_CERTIFICATE_PASSWORD" \
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
+          
+          # Set as default keychain
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          
+          # Setup notary credentials
+          xcrun notarytool store-credentials "AC_NOTARY" \
+            --apple-id "$MACOS_NOTARY_APPLE_ID" \
+            --team-id "$MACOS_NOTARY_TEAM_ID" \
+            --password "$MACOS_NOTARY_PASSWORD" \
+            --keychain "$KEYCHAIN_PATH"
+          
+          # Clean up certificate file
+          rm -rf "$CERT_DIR"
+
+      - name: Sign and create DMG (macOS)
+        if: matrix.build.platform == 'darwin/universal' && (github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'push' && github.ref == 'refs/heads/main'))
+        env:
+          APP_CERTIFICATE: "Developer ID Application: Dennis Paul (TYY3Q6XMR9)"
+          NOTARY_PROFILE: "AC_NOTARY"
+        run: |
+          APP_NAME="neobelt"
+          APP_PATH="./build/bin/$APP_NAME.app"
+          DMG_PATH="./$APP_NAME.dmg"
+          
+          # Ensure the app bundle exists
+          if [ ! -d "$APP_PATH" ]; then
+            echo "App bundle not found at $APP_PATH"
+            exit 1
+          fi
+          
+          # Sign the app bundle (hardened runtime is required for notarization)
+          codesign --timestamp --options=runtime --force --deep \
+            -s "$APP_CERTIFICATE" -v \
+            --entitlements ./build/darwin/entitlements.plist \
+            "$APP_PATH"
+          
+          echo "Creating DMG..."
+          # Staging directory for DMG contents
+          STAGE_DIR=$(mktemp -d)
+          
+          # Copy the app and create Applications symlink
+          cp -R "$APP_PATH" "$STAGE_DIR/"
+          ln -s /Applications "$STAGE_DIR/Applications"
+          
+          # Remove existing DMG
+          rm -f "$DMG_PATH"
+          
+          # Create compressed DMG
+          hdiutil create \
+            -volname "$APP_NAME" \
+            -srcfolder "$STAGE_DIR" \
+            -format UDZO \
+            -fs HFS+ \
+            -ov "$DMG_PATH"
+          
+          # Sign the DMG file (required for Gatekeeper acceptance)
+          echo "Signing DMG..."
+          codesign --timestamp --force \
+            -s "$APP_CERTIFICATE" \
+            "$DMG_PATH"
+          
+          # Notarize and staple
+          echo "Submitting $DMG_PATH for notarization using profile '$NOTARY_PROFILE'..."
+          xcrun notarytool submit "$DMG_PATH" --keychain-profile "$NOTARY_PROFILE" --wait
+          echo "Stapling notarization ticket..."
+          xcrun stapler staple "$DMG_PATH"
+          xcrun stapler validate "$DMG_PATH"
+          
+          # Gatekeeper assessment (should say 'accepted')
+          spctl -a -vv --type install "$DMG_PATH"
+          echo "DMG created at: $DMG_PATH"
+          
+          # Clean up staging directory
+          rm -rf "$STAGE_DIR"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -78,6 +189,14 @@ jobs:
           name: ${{ matrix.build.name }}-${{ github.run_id }}
           path: |
             ./build/bin/*
+
+      # Upload signed DMG separately (only when signing occurred)
+      - name: Upload signed DMG
+        if: matrix.build.platform == 'darwin/universal' && (github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'push' && github.ref == 'refs/heads/main'))
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.build.name }}-dmg-${{ github.run_id }}
+          path: ./neobelt.dmg
 
   release:
     needs: build
