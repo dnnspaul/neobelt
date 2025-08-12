@@ -41,6 +41,7 @@ jobs:
           go-version: '1.23'
 
       - name: Extract version and build info
+        shell: bash
         run: |
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             VERSION=${GITHUB_REF#refs/tags/v}
