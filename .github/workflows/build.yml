@@ -102,15 +102,15 @@ jobs:
           export PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/share/pkgconfig
           # Create a symlink for webkit2gtk-4.0 to point to 4.1
           sudo ln -sf /usr/lib/x86_64-linux-gnu/pkgconfig/webkit2gtk-4.1.pc /usr/lib/x86_64-linux-gnu/pkgconfig/webkit2gtk-4.0.pc
-          wails build -platform linux/amd64 -ldflags "-s -w -X main.Version=${{ env.APP_VERSION }} -X main.BuildTime=${{ env.BUILD_TIME }} -X main.CommitHash=${{ env.COMMIT_HASH }}"
+          wails build -platform linux/amd64 -ldflags "-s -w -X neobelt/internal/version.Version=${{ env.APP_VERSION }} -X neobelt/internal/version.BuildTime=${{ env.BUILD_TIME }} -X neobelt/internal/version.CommitHash=${{ env.COMMIT_HASH }}"
 
       - name: Build application (Windows)
         if: matrix.build.os == 'windows-latest'
-        run: wails build -platform windows/amd64 -ldflags "-s -w -X main.Version=${{ env.APP_VERSION }} -X main.BuildTime=${{ env.BUILD_TIME }} -X main.CommitHash=${{ env.COMMIT_HASH }}"
+        run: wails build -platform windows/amd64 -ldflags "-s -w -X neobelt/internal/version.Version=${{ env.APP_VERSION }} -X neobelt/internal/version.BuildTime=${{ env.BUILD_TIME }} -X neobelt/internal/version.CommitHash=${{ env.COMMIT_HASH }}"
 
       - name: Build application (macOS)
         if: matrix.build.os == 'macos-latest'
-        run: wails build -platform darwin/universal -ldflags "-s -w -X main.Version=${{ env.APP_VERSION }} -X main.BuildTime=${{ env.BUILD_TIME }} -X main.CommitHash=${{ env.COMMIT_HASH }}"
+        run: wails build -platform darwin/universal -ldflags "-s -w -X neobelt/internal/version.Version=${{ env.APP_VERSION }} -X neobelt/internal/version.BuildTime=${{ env.BUILD_TIME }} -X neobelt/internal/version.CommitHash=${{ env.COMMIT_HASH }}"
 
       # macOS Code Signing and Notarization (only for releases and main branch, not PRs)
       - name: Setup macOS certificates and code signing
