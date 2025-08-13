@@ -13,6 +13,7 @@ type Configuration struct {
 	App               AppConfig            `json:"app" mapstructure:"app"`
 	ServerDefaults    ServerDefaultsConfig `json:"server_defaults" mapstructure:"server_defaults"`
 	RemoteAccess      RemoteAccessConfig   `json:"remote_access" mapstructure:"remote_access"`
+	ClaudeIntegration ClaudeIntegrationConfig `json:"claude_integration" mapstructure:"claude_integration"`
 	Registries        []Registry           `json:"registries" mapstructure:"registries"`
 	InstalledServers  []InstalledServer    `json:"installed_servers" mapstructure:"installed_servers"`
 	ConfiguredServers []ConfiguredServer   `json:"configured_servers" mapstructure:"configured_servers"`
@@ -46,6 +47,12 @@ type RemoteAccessConfig struct {
 	PrivateKey   string `json:"private_key" mapstructure:"private_key"`
 	PublicKey    string `json:"public_key" mapstructure:"public_key"`
 	KeyGenerated bool   `json:"key_generated" mapstructure:"key_generated"`
+}
+
+// ClaudeIntegrationConfig contains Claude integration settings
+type ClaudeIntegrationConfig struct {
+	Enabled    bool   `json:"enabled" mapstructure:"enabled"`
+	ConfigPath string `json:"config_path" mapstructure:"config_path"`
 }
 
 // InstalledServer represents a server that has been installed (Docker image pulled)
@@ -146,6 +153,8 @@ func NewConfigManager() (*ConfigManager, error) {
 	v.SetDefault("remote_access.private_key", "")
 	v.SetDefault("remote_access.public_key", "")
 	v.SetDefault("remote_access.key_generated", false)
+	v.SetDefault("claude_integration.enabled", false)
+	v.SetDefault("claude_integration.config_path", "")
 	v.SetDefault("registries", []Registry{})
 	v.SetDefault("installed_servers", []InstalledServer{})
 	v.SetDefault("configured_servers", []ConfiguredServer{})
@@ -194,6 +203,7 @@ func (cm *ConfigManager) Save() error {
 		cm.viper.Set("app", cm.config.App)
 		cm.viper.Set("server_defaults", cm.config.ServerDefaults)
 		cm.viper.Set("remote_access", cm.config.RemoteAccess)
+		cm.viper.Set("claude_integration", cm.config.ClaudeIntegration)
 		cm.viper.Set("registries", cm.config.Registries)
 		cm.viper.Set("installed_servers", cm.config.InstalledServers)
 		cm.viper.Set("configured_servers", cm.config.ConfiguredServers)

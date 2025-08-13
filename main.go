@@ -127,8 +127,8 @@ func runCLI() {
 	if mcpProxy {
 		args := cliFlags.Args()
 		if len(args) == 0 {
-			fmt.Println("Error: MCP proxy requires a target URL")
-			fmt.Println("Usage: neobelt --mcp-proxy -h \"Authorization: Bearer TOKEN\" https://mcp-server.tld/mcp")
+			fmt.Fprintln(os.Stderr, "Error: MCP proxy requires a target URL")
+			fmt.Fprintln(os.Stderr, "Usage: neobelt --mcp-proxy -h \"Authorization: Bearer TOKEN\" https://mcp-server.tld/mcp")
 			os.Exit(1)
 		}
 		
@@ -138,9 +138,9 @@ func runCLI() {
 	}
 	
 	// Show help if no recognized command
-	fmt.Println("Neobelt CLI")
-	fmt.Println("Usage:")
-	fmt.Println("  neobelt --mcp-proxy -h \"Header: Value\" <target-url>")
+	fmt.Fprintln(os.Stderr, "Neobelt CLI")
+	fmt.Fprintln(os.Stderr, "Usage:")
+	fmt.Fprintln(os.Stderr, "  neobelt --mcp-proxy -h \"Header: Value\" <target-url>")
 }
 
 // Start the MCP proxy server
@@ -210,6 +210,7 @@ func (p *MCPProxy) forwardToHTTP(ctx context.Context, message JSONRPCMessage) (J
 	
 	// Set headers
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
 	for key, value := range p.headers {
 		req.Header.Set(key, value)
 	}
@@ -229,16 +230,51 @@ func (p *MCPProxy) forwardToHTTP(ctx context.Context, message JSONRPCMessage) (J
 	
 	// Check HTTP status
 	if resp.StatusCode != http.StatusOK {
+		fmt.Fprintf(os.Stderr, "HTTP error %d: %s\n", resp.StatusCode, string(body))
 		return JSONRPCMessage{}, fmt.Errorf("HTTP error: %d %s", resp.StatusCode, string(body))
 	}
+	
+	// Log response for debugging
+	fmt.Fprintf(os.Stderr, "Raw HTTP response: %s\n", string(body))
 	
 	// Parse JSON-RPC response
 	var response JSONRPCMessage
 	if err := json.Unmarshal(body, &response); err != nil {
-		return JSONRPCMessage{}, fmt.Errorf("failed to parse response: %w", err)
+		// Try parsing as SSE format
+		fmt.Fprintf(os.Stderr, "Direct JSON parse failed, trying SSE format...\n")
+		jsonData, sseErr := parseSSEResponse(body)
+		if sseErr != nil {
+			fmt.Fprintf(os.Stderr, "SSE parse error: %v, Raw response: %s\n", sseErr, string(body))
+			return JSONRPCMessage{}, fmt.Errorf("failed to parse response as JSON or SSE: %w", err)
+		}
+		
+		// Try parsing the extracted JSON data
+		if err := json.Unmarshal(jsonData, &response); err != nil {
+			fmt.Fprintf(os.Stderr, "JSON parse error from SSE data: %v, Extracted JSON: %s\n", err, string(jsonData))
+			return JSONRPCMessage{}, fmt.Errorf("failed to parse extracted JSON from SSE: %w", err)
+		}
+		
+		fmt.Fprintf(os.Stderr, "Successfully parsed SSE response\n")
 	}
 	
 	return response, nil
+}
+
+// parseSSEResponse extracts JSON data from Server-Sent Events format
+func parseSSEResponse(body []byte) ([]byte, error) {
+	bodyStr := string(body)
+	lines := strings.Split(bodyStr, "\n")
+	
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "data: ") {
+			// Extract JSON from "data: {json...}" line
+			jsonData := strings.TrimPrefix(line, "data: ")
+			return []byte(jsonData), nil
+		}
+	}
+	
+	return nil, fmt.Errorf("no data field found in SSE response")
 }
 
 // Send JSON-RPC response to stdout
@@ -255,6 +291,9 @@ func (p *MCPProxy) sendResponse(message JSONRPCMessage) {
 func startMCPProxy(targetURL string, headers []string) {
 	proxy := NewMCPProxy(targetURL, headers)
 	ctx := context.Background()
+	
+	// Log to stderr that proxy is starting (for debugging)
+	fmt.Fprintf(os.Stderr, "MCP Proxy starting, target URL: %s\n", targetURL)
 	
 	if err := proxy.Start(ctx); err != nil {
 		fmt.Fprintf(os.Stderr, "Proxy error: %v\n", err)

@@ -484,6 +484,22 @@ export class Servers {
 /host/config:/app/config">${volumesText}</textarea>
                         <p class="text-xs text-gray-500 mt-1">One mount per line in host_path:container_path format</p>
                     </div>
+                    
+                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-4" id="claude-integration-section">
+                        <h4 class="font-medium text-gray-900 mb-3">Claude Desktop Integration</h4>
+                        <div class="flex items-center">
+                            <input type="checkbox" id="add-to-claude" class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded">
+                            <label for="add-to-claude" class="ml-2 block text-sm text-gray-700">
+                                Add to Claude Desktop configuration
+                            </label>
+                        </div>
+                        <p class="text-xs text-blue-700 mt-2">
+                            <svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                            This will automatically register the MCP server with Claude Desktop using Neobelt's MCP-Proxy functionality. Claude integration must be enabled and configured in Settings.
+                        </p>
+                    </div>
                 </div>
                 
                 <div class="flex justify-end space-x-3 pt-4 border-t border-gray-200">
@@ -514,6 +530,9 @@ export class Servers {
                     this.createContainerFromForm(server);
                 }
             });
+
+            // Initialize Claude integration section
+            this.initializeClaudeIntegrationSection();
 
             // Add environment variable functionality
             this.attachEnvVarEventListeners();
@@ -1177,6 +1196,9 @@ export class Servers {
             logger.debug('Starting new container...');
             await window.go.main.App.StartContainer(newContainerId);
             
+            // Handle Claude Desktop integration if requested
+            await this.handleClaudeIntegration(newConfig.name, newConfig.port);
+            
             // Step 5: Update the configured server entry
             try {
                 logger.debug('Updating configured server entry...');
@@ -1485,6 +1507,9 @@ export class Servers {
                 logger.debug('Auto-start disabled, container created but not started');
             }
             
+            // Handle Claude Desktop integration if requested
+            await this.handleClaudeIntegration(containerName, port);
+            
             // Create a configured server entry for this container
             try {
                 logger.debug('Creating configured server entry');
@@ -1669,5 +1694,63 @@ export class Servers {
             title: 'Container Creation Failed',
             size: 'lg'
         });
+    }
+
+    async initializeClaudeIntegrationSection() {
+        try {
+            // Check if Claude integration is enabled
+            const claudeIntegration = await window.go.main.App.GetClaudeIntegration();
+            const claudeSection = document.getElementById('claude-integration-section');
+            const addToClaudeCheckbox = document.getElementById('add-to-claude');
+            
+            if (!claudeSection) {
+                logger.debug('Claude integration section not found in modal');
+                return;
+            }
+            
+            if (!claudeIntegration.enabled || !claudeIntegration.config_path) {
+                // Hide the section if Claude integration is not enabled or configured
+                claudeSection.style.display = 'none';
+                logger.debug('Claude integration not enabled or configured, hiding section');
+                return;
+            }
+            
+            // Show the section and check the checkbox by default
+            claudeSection.style.display = 'block';
+            if (addToClaudeCheckbox) {
+                addToClaudeCheckbox.checked = true;
+            }
+            
+            logger.debug('Claude integration section initialized and visible');
+        } catch (error) {
+            logger.error('Failed to initialize Claude integration section:', error);
+            // Hide the section on error
+            const claudeSection = document.getElementById('claude-integration-section');
+            if (claudeSection) {
+                claudeSection.style.display = 'none';
+            }
+        }
+    }
+
+    async handleClaudeIntegration(containerName, port) {
+        try {
+            // Check if the checkbox is checked
+            const addToClaudeCheckbox = document.getElementById('add-to-claude');
+            if (!addToClaudeCheckbox || !addToClaudeCheckbox.checked) {
+                logger.debug('Claude integration checkbox not checked, skipping');
+                return;
+            }
+
+            logger.debug('Adding MCP server to Claude Desktop configuration...');
+            
+            // Call the backend to handle Claude integration
+            await window.go.main.App.AddMCPServerToClaude(containerName, port);
+            
+            logger.debug('Successfully added MCP server to Claude Desktop configuration');
+        } catch (error) {
+            logger.warning('Failed to add MCP server to Claude Desktop configuration:', error);
+            // Don't fail the whole operation - just log a warning
+            // The user can manually add it later if needed
+        }
     }
 }

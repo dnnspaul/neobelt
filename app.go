@@ -843,6 +843,10 @@ func (a *App) RemoveContainer(containerID string, force bool) error {
 			if server.ContainerID == containerID ||
 				(len(server.ContainerID) > len(containerID) && strings.HasPrefix(server.ContainerID, containerID)) ||
 				(len(containerID) > len(server.ContainerID) && strings.HasPrefix(containerID, server.ContainerID)) {
+				
+				// Clean up Claude Desktop configuration before removing the server entry
+				a.RemoveMCPServerFromClaude(server.ContainerName)
+				
 				if removeErr := a.configManager.RemoveConfiguredServer(server.ID); removeErr != nil {
 					// Log the error but don't fail the operation
 					LogWarning("Failed to remove configured server entry for container %s: %v", containerID, removeErr)
@@ -1100,6 +1104,10 @@ func (a *App) RemoveInstalledServer(serverID string, removeImage bool) error {
 			if configServer.ContainerID != "" && a.dockerService != nil {
 				_ = a.dockerService.RemoveContainer(a.ctx, configServer.ContainerID, true)
 			}
+			
+			// Clean up Claude Desktop configuration before removing the server entry
+			a.RemoveMCPServerFromClaude(configServer.ContainerName)
+			
 			// Remove the configured server entry
 			_ = a.configManager.RemoveConfiguredServer(configServer.ID)
 		}
@@ -1289,6 +1297,47 @@ func (a *App) UpdateRemoteAccess(remoteAccess RemoteAccessConfig) error {
 	return a.configManager.Save()
 }
 
+// GetClaudeIntegration returns the current Claude integration configuration
+func (a *App) GetClaudeIntegration() (*ClaudeIntegrationConfig, error) {
+	if a.configManager == nil {
+		return nil, fmt.Errorf("configuration manager not available")
+	}
+	config := a.configManager.GetConfig()
+	if config == nil {
+		return &ClaudeIntegrationConfig{
+			Enabled:    false,
+			ConfigPath: "",
+		}, nil
+	}
+	return &config.ClaudeIntegration, nil
+}
+
+// UpdateClaudeIntegration updates the Claude integration configuration
+func (a *App) UpdateClaudeIntegration(claudeIntegration ClaudeIntegrationConfig) error {
+	if a.configManager == nil {
+		return fmt.Errorf("configuration manager not available")
+	}
+	config := a.configManager.GetConfig()
+	if config == nil {
+		return fmt.Errorf("no configuration loaded")
+	}
+	
+	// Check if integration is being disabled
+	wasEnabled := config.ClaudeIntegration.Enabled
+	isBeingDisabled := wasEnabled && !claudeIntegration.Enabled
+	
+	// Update the configuration
+	config.ClaudeIntegration = claudeIntegration
+	
+	// If integration is being disabled, clean up all Neobelt-managed MCP servers
+	if isBeingDisabled {
+		LogInfo("Claude integration is being disabled, cleaning up all Neobelt-managed MCP servers from Claude configuration")
+		a.RemoveAllNeobeltMCPServersFromClaude()
+	}
+	
+	return a.configManager.Save()
+}
+
 // GenerateSSHKeys generates a new SSH key pair for remote access
 func (a *App) GenerateSSHKeys() (*SSHKeyPair, error) {
 	if a.configManager == nil {
@@ -1349,6 +1398,332 @@ func (a *App) GetSSHPublicKey() (string, error) {
 	return config.RemoteAccess.PublicKey, nil
 }
 
+// DetectClaudeConfig attempts to automatically detect the Claude Desktop configuration file
+func (a *App) DetectClaudeConfig() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get user home directory: %w", err)
+	}
+
+	var possiblePaths []string
+	
+	// Add platform-specific paths
+	possiblePaths = append(possiblePaths,
+		filepath.Join(homeDir, "Library", "Application Support", "Claude", "claude_desktop_config.json"),              // macOS
+		filepath.Join(os.Getenv("APPDATA"), "Claude", "claude_desktop_config.json"),                                   // Windows
+		filepath.Join(homeDir, ".config", "Claude", "claude_desktop_config.json"),                                     // Linux
+	)
+
+	// Check each possible path
+	for _, path := range possiblePaths {
+		if path == "" {
+			continue
+		}
+		if _, err := os.Stat(path); err == nil {
+			LogInfo("Found Claude Desktop configuration at: %s", path)
+			return path, nil
+		}
+	}
+
+	return "", fmt.Errorf("Claude Desktop configuration file not found")
+}
+
+// TestClaudeConfig tests if the specified Claude configuration file is valid and accessible
+func (a *App) TestClaudeConfig(configPath string) (map[string]interface{}, error) {
+	if configPath == "" {
+		return nil, fmt.Errorf("configuration path is required")
+	}
+
+	// Check if file exists and is readable
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		return nil, fmt.Errorf("configuration file does not exist: %s", configPath)
+	}
+
+	// Try to read and parse the JSON
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read configuration file: %w", err)
+	}
+
+	var config map[string]interface{}
+	if err := json.Unmarshal(data, &config); err != nil {
+		return nil, fmt.Errorf("invalid JSON in configuration file: %w", err)
+	}
+
+	// Count existing MCP servers
+	existingServers := 0
+	if mcpServers, ok := config["mcpServers"]; ok {
+		if servers, ok := mcpServers.(map[string]interface{}); ok {
+			existingServers = len(servers)
+		}
+	}
+
+	return map[string]interface{}{
+		"valid":            true,
+		"existing_servers": existingServers,
+	}, nil
+}
+
+// SelectClaudeConfigFile opens a file dialog to select the Claude configuration file
+func (a *App) SelectClaudeConfigFile() (string, error) {
+	options := runtime.OpenDialogOptions{
+		DefaultDirectory: "",
+		DefaultFilename:  "claude_desktop_config.json",
+		Title:            "Select Claude Desktop Configuration File",
+		Filters: []runtime.FileFilter{
+			{
+				DisplayName: "Claude Config (*.json)",
+				Pattern:     "*.json",
+			},
+			{
+				DisplayName: "All Files (*.*)",
+				Pattern:     "*",
+			},
+		},
+	}
+
+	selectedFile, err := runtime.OpenFileDialog(a.ctx, options)
+	if err != nil {
+		return "", fmt.Errorf("file selection cancelled by user")
+	}
+
+	if selectedFile == "" {
+		return "", fmt.Errorf("no file selected")
+	}
+
+	return selectedFile, nil
+}
+
+// AddMCPServerToClaude adds an MCP server entry to Claude Desktop configuration
+func (a *App) AddMCPServerToClaude(containerName string, port int) error {
+	// Get Claude integration settings
+	claudeConfig, err := a.GetClaudeIntegration()
+	if err != nil {
+		return fmt.Errorf("failed to get Claude integration settings: %w", err)
+	}
+
+	if !claudeConfig.Enabled || claudeConfig.ConfigPath == "" {
+		return fmt.Errorf("Claude integration is not enabled or configured")
+	}
+
+	// Get the current executable path
+	executablePath := getExecutablePath()
+
+	// Read existing Claude configuration
+	var config map[string]interface{}
+	data, err := os.ReadFile(claudeConfig.ConfigPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// Create new config if file doesn't exist
+			config = make(map[string]interface{})
+		} else {
+			return fmt.Errorf("failed to read Claude configuration: %w", err)
+		}
+	} else {
+		if err := json.Unmarshal(data, &config); err != nil {
+			return fmt.Errorf("failed to parse Claude configuration: %w", err)
+		}
+	}
+
+	// Ensure mcpServers section exists
+	if _, ok := config["mcpServers"]; !ok {
+		config["mcpServers"] = make(map[string]interface{})
+	}
+
+	mcpServers, ok := config["mcpServers"].(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("invalid mcpServers section in Claude configuration")
+	}
+
+	// Add the new MCP server entry
+	mcpServers[containerName] = map[string]interface{}{
+		"command": executablePath,
+		"args": []string{
+			"--mcp-proxy",
+			fmt.Sprintf("http://localhost:%d/mcp", port),
+		},
+	}
+
+	// Write back to file
+	updatedData, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal Claude configuration: %w", err)
+	}
+
+	// Create directory if it doesn't exist
+	if err := os.MkdirAll(filepath.Dir(claudeConfig.ConfigPath), 0755); err != nil {
+		return fmt.Errorf("failed to create configuration directory: %w", err)
+	}
+
+	if err := os.WriteFile(claudeConfig.ConfigPath, updatedData, 0644); err != nil {
+		return fmt.Errorf("failed to write Claude configuration: %w", err)
+	}
+
+	LogInfo("Successfully added MCP server '%s' to Claude Desktop configuration", containerName)
+	return nil
+}
+
+// RemoveMCPServerFromClaude removes an MCP server entry from Claude Desktop configuration
+func (a *App) RemoveMCPServerFromClaude(containerName string) error {
+	// Get Claude integration settings
+	claudeConfig, err := a.GetClaudeIntegration()
+	if err != nil {
+		LogWarning("Failed to get Claude integration settings for cleanup: %v", err)
+		return nil // Don't fail the main operation
+	}
+
+	if !claudeConfig.Enabled || claudeConfig.ConfigPath == "" {
+		LogDebug("Claude integration not enabled or configured, skipping cleanup")
+		return nil
+	}
+
+	// Read existing Claude configuration
+	data, err := os.ReadFile(claudeConfig.ConfigPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			LogDebug("Claude configuration file does not exist, nothing to clean up")
+			return nil
+		}
+		LogWarning("Failed to read Claude configuration for cleanup: %v", err)
+		return nil // Don't fail the main operation
+	}
+
+	var config map[string]interface{}
+	if err := json.Unmarshal(data, &config); err != nil {
+		LogWarning("Failed to parse Claude configuration for cleanup: %v", err)
+		return nil // Don't fail the main operation
+	}
+
+	// Check if mcpServers section exists
+	mcpServers, ok := config["mcpServers"].(map[string]interface{})
+	if !ok {
+		LogDebug("No mcpServers section found in Claude configuration")
+		return nil
+	}
+
+	// Check if our server exists in the configuration
+	if _, exists := mcpServers[containerName]; !exists {
+		LogDebug("MCP server '%s' not found in Claude configuration", containerName)
+		return nil
+	}
+
+	// Remove the server entry
+	delete(mcpServers, containerName)
+	LogInfo("Removed MCP server '%s' from Claude Desktop configuration", containerName)
+
+	// If mcpServers is now empty, we can keep it as an empty object
+	// This maintains the structure for future additions
+
+	// Write back to file
+	updatedData, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		LogWarning("Failed to marshal Claude configuration after cleanup: %v", err)
+		return nil // Don't fail the main operation
+	}
+
+	if err := os.WriteFile(claudeConfig.ConfigPath, updatedData, 0644); err != nil {
+		LogWarning("Failed to write Claude configuration after cleanup: %v", err)
+		return nil // Don't fail the main operation
+	}
+
+	LogInfo("Successfully cleaned up Claude Desktop configuration for server '%s'", containerName)
+	return nil
+}
+
+// RemoveAllNeobeltMCPServersFromClaude removes all Neobelt-managed MCP servers from Claude Desktop configuration
+func (a *App) RemoveAllNeobeltMCPServersFromClaude() error {
+	// Get Claude integration settings
+	claudeConfig, err := a.GetClaudeIntegration()
+	if err != nil {
+		LogWarning("Failed to get Claude integration settings for bulk cleanup: %v", err)
+		return nil // Don't fail the operation
+	}
+
+	if claudeConfig.ConfigPath == "" {
+		LogDebug("No Claude configuration path specified, skipping bulk cleanup")
+		return nil
+	}
+
+	// Read existing Claude configuration
+	data, err := os.ReadFile(claudeConfig.ConfigPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			LogDebug("Claude configuration file does not exist, nothing to clean up")
+			return nil
+		}
+		LogWarning("Failed to read Claude configuration for bulk cleanup: %v", err)
+		return nil // Don't fail the operation
+	}
+
+	var config map[string]interface{}
+	if err := json.Unmarshal(data, &config); err != nil {
+		LogWarning("Failed to parse Claude configuration for bulk cleanup: %v", err)
+		return nil // Don't fail the operation
+	}
+
+	// Check if mcpServers section exists
+	mcpServers, ok := config["mcpServers"].(map[string]interface{})
+	if !ok {
+		LogDebug("No mcpServers section found in Claude configuration")
+		return nil
+	}
+
+	// Get our executable path to identify Neobelt-managed servers
+	executablePath := getExecutablePath()
+	var removedServers []string
+
+	// Find and collect all Neobelt-managed MCP servers
+	for serverName, serverConfig := range mcpServers {
+		if serverConfigMap, ok := serverConfig.(map[string]interface{}); ok {
+			if command, ok := serverConfigMap["command"].(string); ok {
+				// Check if this server is managed by our binary
+				if command == executablePath {
+					// Also check if it has the --mcp-proxy argument to be sure
+					if argsInterface, hasArgs := serverConfigMap["args"]; hasArgs {
+						if args, isArray := argsInterface.([]interface{}); isArray && len(args) > 0 {
+							if firstArg, isString := args[0].(string); isString && firstArg == "--mcp-proxy" {
+								removedServers = append(removedServers, serverName)
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Remove all identified Neobelt-managed servers
+	for _, serverName := range removedServers {
+		delete(mcpServers, serverName)
+		LogInfo("Removed Neobelt-managed MCP server '%s' from Claude configuration during bulk cleanup", serverName)
+	}
+
+	if len(removedServers) == 0 {
+		LogInfo("No Neobelt-managed MCP servers found in Claude configuration")
+		return nil
+	}
+
+	// Write back to file
+	updatedData, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		LogWarning("Failed to marshal Claude configuration after bulk cleanup: %v", err)
+		return nil // Don't fail the operation
+	}
+
+	if err := os.WriteFile(claudeConfig.ConfigPath, updatedData, 0644); err != nil {
+		LogWarning("Failed to write Claude configuration after bulk cleanup: %v", err)
+		return nil // Don't fail the operation
+	}
+
+	LogInfo("Successfully removed %d Neobelt-managed MCP servers from Claude Desktop configuration", len(removedServers))
+	return nil
+}
+
+// CleanupClaudeConfiguration manually removes all Neobelt-managed MCP servers from Claude Desktop configuration
+func (a *App) CleanupClaudeConfiguration() error {
+	LogInfo("Manual Claude configuration cleanup requested")
+	return a.RemoveAllNeobeltMCPServersFromClaude()
+}
+
 // CheckDockerStatus checks the current status of Docker daemon and Docker Desktop installation
 func (a *App) CheckDockerStatus() (*DockerStatus, error) {
 	if a.dockerService == nil {
@@ -1401,8 +1776,12 @@ func NewDockerMonitor(app *App) *DockerMonitor {
 func (dm *DockerMonitor) Start() {
 	dm.ticker = time.NewTicker(15 * time.Second)
 	
-	// Check immediately on start
-	go dm.checkDockerStatus()
+	// Check immediately on start after a short delay to allow frontend initialization
+	go func() {
+		// Wait 2 seconds for frontend to be ready
+		time.Sleep(2 * time.Second)
+		dm.checkDockerStatus()
+	}()
 	
 	// Then check every 15 seconds
 	go func() {

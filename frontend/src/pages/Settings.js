@@ -9,10 +9,8 @@ export class Settings {
                 startupPage: 'dashboard'
             },
             claude: {
-                autoDetect: true,
-                configPath: '~/Library/Application Support/Claude/config.json',
-                autoReload: true,
-                backupConfig: true
+                enabled: false,
+                configPath: ''
             },
             servers: {
                 autoStart: false,
@@ -68,6 +66,13 @@ export class Settings {
                 publicKey: remoteAccess.public_key || '',
                 keyGenerated: remoteAccess.key_generated || false
             };
+
+            // Load Claude integration settings
+            const claudeIntegration = await window.go.main.App.GetClaudeIntegration();
+            this.settings.claude = {
+                enabled: claudeIntegration.enabled || false,
+                configPath: claudeIntegration.config_path || ''
+            };
             
             this.originalSettings = JSON.parse(JSON.stringify(this.settings));
         } catch (error) {
@@ -104,6 +109,13 @@ export class Settings {
         if (remoteUsernameField) remoteUsernameField.value = this.settings.remoteAccess.username;
         if (privateKeyField) privateKeyField.value = this.settings.remoteAccess.privateKey ? '••••••••••••••••••••' : '';
         if (publicKeyField) publicKeyField.value = this.settings.remoteAccess.publicKey;
+
+        // Update Claude integration fields
+        const claudeEnabledField = document.getElementById('claudeEnabled');
+        const claudeConfigPathField = document.getElementById('claudeConfigPath');
+
+        if (claudeEnabledField) claudeEnabledField.checked = this.settings.claude.enabled;
+        if (claudeConfigPathField) claudeConfigPathField.value = this.settings.claude.configPath;
 
         // Update advanced settings fields
         const debugModeField = document.getElementById('debugMode');
@@ -239,80 +251,84 @@ export class Settings {
                             <div class="space-y-6">
                                 <div>
                                     <h2 class="text-lg font-semibold text-gray-900 mb-4">Claude Desktop Integration</h2>
+                                    <p class="text-gray-600">Configure integration with Claude Desktop to automatically register MCP servers.</p>
                                 </div>
 
-                                <!-- Detection Settings -->
+                                <!-- Integration Status -->
                                 <div class="bg-white border border-gray-200 rounded-lg p-6">
-                                    <h3 class="text-md font-medium text-gray-900 mb-4">Detection</h3>
+                                    <h3 class="text-md font-medium text-gray-900 mb-4">Integration Status</h3>
                                     <div class="space-y-4">
                                         <div class="flex items-center justify-between">
                                             <div>
-                                                <label class="text-sm font-medium text-gray-700">Auto-detect Claude Desktop</label>
-                                                <p class="text-sm text-gray-500">Automatically find Claude Desktop installation</p>
+                                                <label class="text-sm font-medium text-gray-700">Enable Claude Integration</label>
+                                                <p class="text-sm text-gray-500">Allow Neobelt to add MCP servers to Claude Desktop configuration</p>
                                             </div>
                                             <label class="relative inline-flex items-center cursor-pointer">
-                                                <input type="checkbox" class="sr-only peer" ${this.settings.claude.autoDetect ? 'checked' : ''}>
+                                                <input id="claudeEnabled" type="checkbox" class="sr-only peer" ${this.settings.claude.enabled ? 'checked' : ''}>
                                                 <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
                                             </label>
                                         </div>
+                                    </div>
+                                </div>
 
+                                <!-- Configuration Path -->
+                                <div class="bg-white border border-gray-200 rounded-lg p-6">
+                                    <h3 class="text-md font-medium text-gray-900 mb-4">Configuration Path</h3>
+                                    <div class="space-y-4">
                                         <div>
-                                            <label class="block text-sm font-medium text-gray-700 mb-2">Configuration file path</label>
+                                            <label class="block text-sm font-medium text-gray-700 mb-2">Claude Desktop config file path</label>
                                             <div class="flex space-x-2">
-                                                <input type="text" value="${this.settings.claude.configPath}" class="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500">
-                                                <button class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+                                                <input id="claudeConfigPath" type="text" value="${this.settings.claude.configPath}" placeholder="Click 'Auto-Detect' to find the path" class="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500">
+                                                <button id="browse-claude-config-btn" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
                                                     Browse
                                                 </button>
                                             </div>
+                                            <p class="text-xs text-gray-500 mt-1">Path to claude_desktop_config.json file</p>
                                         </div>
 
                                         <div class="pt-4 border-t border-gray-200">
                                             <div class="flex space-x-3">
-                                                <button id="detect-claude-btn" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
-                                                    Detect Claude Desktop
+                                                <button id="detect-claude-btn" class="px-4 py-2 text-sm font-medium text-white bg-primary-600 border border-transparent rounded-md hover:bg-primary-700">
+                                                    Auto-Detect Claude Desktop
                                                 </button>
-                                                <button id="test-connection-btn" class="px-4 py-2 text-sm font-medium text-primary-700 bg-primary-50 border border-primary-300 rounded-md hover:bg-primary-100">
-                                                    Test Connection
+                                                <button id="test-claude-config-btn" class="px-4 py-2 text-sm font-medium text-primary-700 bg-primary-50 border border-primary-300 rounded-md hover:bg-primary-100">
+                                                    Test Configuration
+                                                </button>
+                                                <button id="cleanup-claude-btn" class="px-4 py-2 text-sm font-medium text-red-700 bg-red-50 border border-red-300 rounded-md hover:bg-red-100">
+                                                    Clean Up Neobelt Servers
                                                 </button>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
 
-                                <!-- Configuration Management -->
-                                <div class="bg-white border border-gray-200 rounded-lg p-6">
-                                    <h3 class="text-md font-medium text-gray-900 mb-4">Configuration Management</h3>
-                                    <div class="space-y-4">
-                                        <div class="flex items-center justify-between">
-                                            <div>
-                                                <label class="text-sm font-medium text-gray-700">Auto-reload configuration</label>
-                                                <p class="text-sm text-gray-500">Automatically reload Claude when config changes</p>
-                                            </div>
-                                            <label class="relative inline-flex items-center cursor-pointer">
-                                                <input type="checkbox" class="sr-only peer" ${this.settings.claude.autoReload ? 'checked' : ''}>
-                                                <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
-                                            </label>
+                                <!-- Claude Cleanup Information -->
+                                <div class="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                                    <div class="flex">
+                                        <svg class="w-5 h-5 text-amber-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
+                                        </svg>
+                                        <div class="ml-3">
+                                            <h4 class="text-sm font-medium text-amber-800">Automatic Cleanup</h4>
+                                            <p class="text-sm text-amber-700 mt-1">
+                                                When you disable Claude integration, all Neobelt-managed MCP servers will be automatically removed from Claude Desktop configuration. Use the "Clean Up" button for manual cleanup.
+                                            </p>
                                         </div>
+                                    </div>
+                                </div>
 
-                                        <div class="flex items-center justify-between">
-                                            <div>
-                                                <label class="text-sm font-medium text-gray-700">Backup configuration</label>
-                                                <p class="text-sm text-gray-500">Create backups before making changes</p>
-                                            </div>
-                                            <label class="relative inline-flex items-center cursor-pointer">
-                                                <input type="checkbox" class="sr-only peer" ${this.settings.claude.backupConfig ? 'checked' : ''}>
-                                                <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
-                                            </label>
-                                        </div>
-
-                                        <div class="pt-4 border-t border-gray-200">
-                                            <div class="flex space-x-3">
-                                                <button id="backup-config-btn" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
-                                                    Create Backup
-                                                </button>
-                                                <button id="restore-config-btn" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
-                                                    Restore Backup
-                                                </button>
+                                <!-- Platform Information -->
+                                <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                                    <div class="flex">
+                                        <svg class="w-5 h-5 text-blue-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                        </svg>
+                                        <div class="ml-3">
+                                            <h4 class="text-sm font-medium text-blue-800">Platform-specific paths</h4>
+                                            <div class="mt-1 text-sm text-blue-700 space-y-1">
+                                                <div><strong>macOS:</strong> ~/Library/Application Support/Claude/claude_desktop_config.json</div>
+                                                <div><strong>Windows:</strong> %APPDATA%\\Claude\\claude_desktop_config.json</div>
+                                                <div><strong>Linux:</strong> ~/.config/Claude/claude_desktop_config.json</div>
                                             </div>
                                         </div>
                                     </div>
@@ -489,16 +505,16 @@ export class Settings {
             this.detectClaude();
         });
 
-        document.getElementById('test-connection-btn')?.addEventListener('click', () => {
-            this.testClaudeConnection();
+        document.getElementById('test-claude-config-btn')?.addEventListener('click', () => {
+            this.testClaudeConfig();
         });
 
-        document.getElementById('backup-config-btn')?.addEventListener('click', () => {
-            this.backupConfig();
+        document.getElementById('browse-claude-config-btn')?.addEventListener('click', () => {
+            this.browseClaudeConfig();
         });
 
-        document.getElementById('restore-config-btn')?.addEventListener('click', () => {
-            this.restoreConfig();
+        document.getElementById('cleanup-claude-btn')?.addEventListener('click', () => {
+            this.cleanupClaudeConfiguration();
         });
 
         // Advanced settings buttons
@@ -584,6 +600,15 @@ export class Settings {
                 restart_on_failure: restartOnFailure
             };
 
+            // Collect Claude integration values from the form
+            const claudeEnabled = document.getElementById('claudeEnabled')?.checked || false;
+            const claudeConfigPath = document.getElementById('claudeConfigPath')?.value || '';
+
+            const claudeIntegrationConfig = {
+                enabled: claudeEnabled,
+                config_path: claudeConfigPath
+            };
+
             // Collect Remote Access values from the form
             const remoteServer = document.getElementById('remoteServer')?.value || 'remote.neobelt.io';
             const remoteUsername = document.getElementById('remoteUsername')?.value || '';
@@ -600,6 +625,7 @@ export class Settings {
             await window.go.main.App.UpdateAppConfig(appConfig);
             const containersRecreated = await window.go.main.App.UpdateServerDefaults(serverDefaults);
             await window.go.main.App.UpdateRemoteAccess(remoteAccessConfig);
+            await window.go.main.App.UpdateClaudeIntegration(claudeIntegrationConfig);
 
             // Update local settings
             this.settings.general = {
@@ -628,6 +654,11 @@ export class Settings {
                 privateKey: this.settings.remoteAccess.privateKey,
                 publicKey: this.settings.remoteAccess.publicKey,
                 keyGenerated: this.settings.remoteAccess.keyGenerated
+            };
+
+            this.settings.claude = {
+                enabled: claudeEnabled,
+                configPath: claudeConfigPath
             };
         } catch (error) {
             logger.error('Failed to save settings:', error);
@@ -757,9 +788,15 @@ export class Settings {
                         key_generated: false
                     };
 
+                    const defaultClaudeIntegration = {
+                        enabled: false,
+                        config_path: ''
+                    };
+
                     await window.go.main.App.UpdateAppConfig(defaultAppConfig);
                     await window.go.main.App.UpdateServerDefaults(defaultServerDefaults);
                     await window.go.main.App.UpdateRemoteAccess(defaultRemoteAccess);
+                    await window.go.main.App.UpdateClaudeIntegration(defaultClaudeIntegration);
                     
                     // Update the UI - General settings
                     document.getElementById('generalAutoStart').checked = false;
@@ -775,6 +812,10 @@ export class Settings {
                     document.getElementById('maxMemory').value = '512';
                     document.getElementById('restartOnFailure').checked = true;
                     
+                    // Reset Claude integration settings
+                    document.getElementById('claudeEnabled').checked = false;
+                    document.getElementById('claudeConfigPath').value = '';
+
                     // Reset Remote Access settings
                     document.getElementById('remoteServer').value = 'remote.neobelt.io';
                     document.getElementById('remoteUsername').value = '';
@@ -807,6 +848,11 @@ export class Settings {
                         privateKey: '',
                         publicKey: '',
                         keyGenerated: false
+                    };
+
+                    this.settings.claude = {
+                        enabled: false,
+                        configPath: ''
                     };
 
                     const successContent = `
@@ -850,20 +896,255 @@ export class Settings {
     }
 
 
-    detectClaude() {
+    async detectClaude() {
         logger.info('Detecting Claude Desktop...');
+        
+        const detectBtn = document.getElementById('detect-claude-btn');
+        const originalText = detectBtn ? detectBtn.textContent : '';
+        
+        try {
+            if (detectBtn) {
+                detectBtn.disabled = true;
+                detectBtn.textContent = 'Detecting...';
+            }
+            
+            const detectedPath = await window.go.main.App.DetectClaudeConfig();
+            
+            // Update the path field
+            const pathField = document.getElementById('claudeConfigPath');
+            if (pathField) {
+                pathField.value = detectedPath;
+            }
+            
+            // Update local settings
+            this.settings.claude.configPath = detectedPath;
+            
+            const content = `
+                <div class="text-center space-y-4">
+                    <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
+                        <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                        </svg>
+                    </div>
+                    <h3 class="text-lg font-semibold text-gray-900">Claude Desktop Detected</h3>
+                    <p class="text-gray-600">Configuration file found at:</p>
+                    <p class="text-sm font-mono bg-gray-100 p-2 rounded border break-all">${detectedPath}</p>
+                </div>
+            `;
+
+            Modal.show(content, {
+                title: 'Detection Successful',
+                size: 'lg'
+            });
+        } catch (error) {
+            logger.error('Failed to detect Claude Desktop:', error);
+            
+            const content = `
+                <div class="text-center space-y-4">
+                    <div class="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto">
+                        <svg class="w-8 h-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
+                        </svg>
+                    </div>
+                    <h3 class="text-lg font-semibold text-gray-900">Claude Desktop Not Found</h3>
+                    <p class="text-gray-600">Could not automatically detect Claude Desktop configuration file.</p>
+                    <p class="text-sm text-gray-500">Please ensure Claude Desktop is installed and use the Browse button to manually select the configuration file.</p>
+                </div>
+            `;
+
+            Modal.show(content, {
+                title: 'Detection Failed',
+                size: 'md'
+            });
+        } finally {
+            if (detectBtn) {
+                detectBtn.disabled = false;
+                detectBtn.textContent = originalText;
+            }
+        }
     }
 
-    testClaudeConnection() {
-        logger.info('Testing Claude connection...');
+    async testClaudeConfig() {
+        logger.info('Testing Claude configuration...');
+        
+        const configPath = document.getElementById('claudeConfigPath')?.value;
+        if (!configPath) {
+            const content = `
+                <div class="text-center space-y-4">
+                    <div class="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto">
+                        <svg class="w-8 h-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
+                        </svg>
+                    </div>
+                    <h3 class="text-lg font-semibold text-gray-900">No Configuration Path</h3>
+                    <p class="text-gray-600">Please specify a Claude Desktop configuration file path before testing.</p>
+                </div>
+            `;
+
+            Modal.show(content, {
+                title: 'Missing Path',
+                size: 'sm'
+            });
+            return;
+        }
+        
+        const testBtn = document.getElementById('test-claude-config-btn');
+        const originalText = testBtn ? testBtn.textContent : '';
+        
+        try {
+            if (testBtn) {
+                testBtn.disabled = true;
+                testBtn.textContent = 'Testing...';
+            }
+            
+            const testResult = await window.go.main.App.TestClaudeConfig(configPath);
+            
+            const content = `
+                <div class="text-center space-y-4">
+                    <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
+                        <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                        </svg>
+                    </div>
+                    <h3 class="text-lg font-semibold text-gray-900">Configuration Valid</h3>
+                    <p class="text-gray-600">Claude Desktop configuration file is valid and accessible.</p>
+                    ${testResult.existing_servers ? 
+                        `<p class="text-sm text-blue-600">Found ${testResult.existing_servers} existing MCP servers in configuration.</p>` : ''
+                    }
+                </div>
+            `;
+
+            Modal.show(content, {
+                title: 'Test Successful',
+                size: 'md'
+            });
+        } catch (error) {
+            logger.error('Failed to test Claude configuration:', error);
+            
+            const content = `
+                <div class="text-center space-y-4">
+                    <div class="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto">
+                        <svg class="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </div>
+                    <h3 class="text-lg font-semibold text-gray-900">Configuration Test Failed</h3>
+                    <p class="text-gray-600">Unable to access or validate the Claude Desktop configuration file.</p>
+                    <p class="text-sm text-gray-500">Error: ${error.message || 'Unknown error'}</p>
+                </div>
+            `;
+
+            Modal.show(content, {
+                title: 'Test Failed',
+                size: 'md'
+            });
+        } finally {
+            if (testBtn) {
+                testBtn.disabled = false;
+                testBtn.textContent = originalText;
+            }
+        }
     }
 
-    backupConfig() {
-        logger.info('Creating backup...');
+    async browseClaudeConfig() {
+        logger.info('Browsing for Claude configuration file...');
+        
+        try {
+            const selectedPath = await window.go.main.App.SelectClaudeConfigFile();
+            
+            // Update the path field
+            const pathField = document.getElementById('claudeConfigPath');
+            if (pathField) {
+                pathField.value = selectedPath;
+            }
+            
+            // Update local settings
+            this.settings.claude.configPath = selectedPath;
+            
+        } catch (error) {
+            // Handle user cancellation gracefully
+            if (error.message && error.message.includes('cancelled by user')) {
+                return; // Don't show error for user cancellation
+            }
+            
+            logger.error('Failed to select Claude configuration file:', error);
+            
+            const content = `
+                <div class="text-center space-y-4">
+                    <div class="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto">
+                        <svg class="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </div>
+                    <h3 class="text-lg font-semibold text-gray-900">File Selection Failed</h3>
+                    <p class="text-gray-600">Failed to select configuration file: ${error.message || 'Unknown error'}</p>
+                </div>
+            `;
+
+            Modal.show(content, {
+                title: 'Error',
+                size: 'sm'
+            });
+        }
     }
 
-    restoreConfig() {
-        logger.info('Restoring backup...');
+    async cleanupClaudeConfiguration() {
+        logger.info('Cleaning up Neobelt-managed MCP servers from Claude configuration...');
+        
+        const cleanupBtn = document.getElementById('cleanup-claude-btn');
+        const originalText = cleanupBtn ? cleanupBtn.textContent : '';
+        
+        try {
+            if (cleanupBtn) {
+                cleanupBtn.disabled = true;
+                cleanupBtn.textContent = 'Cleaning...';
+            }
+            
+            await window.go.main.App.CleanupClaudeConfiguration();
+            
+            const content = `
+                <div class="text-center space-y-4">
+                    <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
+                        <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                        </svg>
+                    </div>
+                    <h3 class="text-lg font-semibold text-gray-900">Cleanup Complete</h3>
+                    <p class="text-gray-600">All Neobelt-managed MCP servers have been removed from Claude Desktop configuration.</p>
+                    <p class="text-sm text-gray-500">Check the logs for details about which servers were removed.</p>
+                </div>
+            `;
+
+            Modal.show(content, {
+                title: 'Claude Configuration Cleanup',
+                size: 'md'
+            });
+        } catch (error) {
+            logger.error('Failed to cleanup Claude configuration:', error);
+            
+            const content = `
+                <div class="text-center space-y-4">
+                    <div class="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto">
+                        <svg class="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </div>
+                    <h3 class="text-lg font-semibold text-gray-900">Cleanup Failed</h3>
+                    <p class="text-gray-600">Failed to clean up Claude Desktop configuration.</p>
+                    <p class="text-sm text-gray-500">Error: ${error.message || 'Unknown error'}</p>
+                </div>
+            `;
+
+            Modal.show(content, {
+                title: 'Cleanup Failed',
+                size: 'md'
+            });
+        } finally {
+            if (cleanupBtn) {
+                cleanupBtn.disabled = false;
+                cleanupBtn.textContent = originalText;
+            }
+        }
     }
 
     async openLogsDirectory() {
