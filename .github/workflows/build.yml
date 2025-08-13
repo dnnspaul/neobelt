@@ -75,31 +75,23 @@ jobs:
           cache: 'npm'
           cache-dependency-path: './frontend/package-lock.json'
 
-      - name: Verify Go module and debug
-        run: |
-          echo "=== Debug Info ==="
-          pwd
-          ls -la
-          echo "GOPATH: $GOPATH"
-          echo "GOROOT: $GOROOT" 
-          echo "GO111MODULE: $GO111MODULE"
-          echo "=== Go Version ==="
-          go version
-          echo "=== Module Info ==="
-          cat go.mod
-          echo "=== Module Status ==="
-          go mod tidy
-          go mod verify
-          go mod download
-          echo "=== List packages ==="
-          go list ./...
-
       - name: Install Wails
         run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
 
       - name: Install frontend dependencies
         run: npm install
         working-directory: ./frontend
+
+      - name: Prepare Go module and create temp frontend dist
+        run: |
+          echo "Preparing Go modules..."
+          go mod tidy
+          go mod verify  
+          go mod download
+          echo "Creating temporary frontend dist directory for embed directive..."
+          mkdir -p frontend/dist
+          echo "<!-- Temporary placeholder -->" > frontend/dist/index.html
+          echo "Go module preparation complete."
 
       - name: Build application (Linux)
         if: matrix.build.os == 'ubuntu-latest'
@@ -109,21 +101,15 @@ jobs:
           export PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/share/pkgconfig
           # Create a symlink for webkit2gtk-4.0 to point to 4.1
           sudo ln -sf /usr/lib/x86_64-linux-gnu/pkgconfig/webkit2gtk-4.1.pc /usr/lib/x86_64-linux-gnu/pkgconfig/webkit2gtk-4.0.pc
-          pwd
-          go mod status || echo "No Go module status available"
           wails build -platform linux/amd64 -ldflags "-s -w -X main.Version=${{ env.APP_VERSION }} -X main.BuildTime=${{ env.BUILD_TIME }} -X main.CommitHash=${{ env.COMMIT_HASH }}"
 
       - name: Build application (Windows)
         if: matrix.build.os == 'windows-latest'
-        run: |
-          pwd
-          wails build -platform windows/amd64 -ldflags "-s -w -X main.Version=${{ env.APP_VERSION }} -X main.BuildTime=${{ env.BUILD_TIME }} -X main.CommitHash=${{ env.COMMIT_HASH }}"
+        run: wails build -platform windows/amd64 -ldflags "-s -w -X main.Version=${{ env.APP_VERSION }} -X main.BuildTime=${{ env.BUILD_TIME }} -X main.CommitHash=${{ env.COMMIT_HASH }}"
 
       - name: Build application (macOS)
         if: matrix.build.os == 'macos-latest'
-        run: |
-          pwd
-          wails build -platform darwin/universal -ldflags "-s -w -X main.Version=${{ env.APP_VERSION }} -X main.BuildTime=${{ env.BUILD_TIME }} -X main.CommitHash=${{ env.COMMIT_HASH }}"
+        run: wails build -platform darwin/universal -ldflags "-s -w -X main.Version=${{ env.APP_VERSION }} -X main.BuildTime=${{ env.BUILD_TIME }} -X main.CommitHash=${{ env.COMMIT_HASH }}"
 
       # macOS Code Signing and Notarization (only for releases and main branch, not PRs)
       - name: Setup macOS certificates and code signing
