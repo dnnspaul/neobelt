@@ -7,7 +7,7 @@
   
   *Effortlessly manage, configure, and deploy Model Context Protocol servers with Docker*
   
-  [![Version](https://img.shields.io/badge/version-0.0.1-blue.svg)](https://github.com/dennispaul/neobelt/releases)
+  [![Version](https://img.shields.io/badge/version-0.0.1-blue.svg)](https://github.com/dnnspaul/neobelt/releases)
   [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
   [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](#installation)
 
@@ -68,7 +68,7 @@ Neobelt is a powerful desktop application that simplifies the management of **Mo
 
 ### Installation
 
-1. **Download the latest release** for your platform from [Releases](https://github.com/dennispaul/neobelt/releases)
+1. **Download the latest release** for your platform from [Releases](https://github.com/dnnspaul/neobelt/releases)
 
 2. **Install and run** Neobelt
 
@@ -86,7 +86,7 @@ Neobelt is a powerful desktop application that simplifies the management of **Mo
 
 ```bash
 # Clone the repository
-git clone https://github.com/dennispaul/neobelt.git
+git clone https://github.com/dnnspaul/neobelt.git
 cd neobelt
 
 # Install dependencies
@@ -122,7 +122,7 @@ Submit a PR with your changes to the docs/registry.json file.
 
 We welcome contributions! Here's how you can help:
 
-1. **Report Issues** - Found a bug? [Open an issue](https://github.com/dennispaul/neobelt/issues)
+1. **Report Issues** - Found a bug? [Open an issue](https://github.com/dnnspaul/neobelt/issues)
 2. **Submit Pull Requests** - Have a feature or fix? We'd love to review it
 3. **Share Feedback** - Let us know how you're using Neobelt
 4. **Add MCP Servers** - Help expand our registry of available servers
@@ -146,5 +146,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - **Documentation**: [View Docs](docs/)
 - **Registry**: [Registry Docs](docs/registry.md)
-- **Issues**: [GitHub Issues](https://github.com/dennispaul/neobelt/issues)
-- **Releases**: [Download Latest](https://github.com/dennispaul/neobelt/releases)
+- **Issues**: [GitHub Issues](https://github.com/dnnspaul/neobelt/issues)
+- **Releases**: [Download Latest](https://github.com/dnnspaul/neobelt/releases)
