@@ -10,8 +10,8 @@ export async function loadServers() {
     try {
         // Load both Docker containers and configured servers
         const [containers, configuredServers] = await Promise.all([
-            window.go.main.App.GetManagedContainers(),
-            window.go.main.App.GetConfiguredServers()
+            window.go.app.App.GetManagedContainers(),
+            window.go.app.App.GetConfiguredServers()
         ]);
 
         // Filter containers to only show those that exist in the config file
@@ -42,8 +42,8 @@ export async function refreshServersWithoutLoading() {
     try {
         // Load both Docker containers and configured servers without setting loading state
         const [containers, configuredServers] = await Promise.all([
-            window.go.main.App.GetManagedContainers(),
-            window.go.main.App.GetConfiguredServers()
+            window.go.app.App.GetManagedContainers(),
+            window.go.app.App.GetConfiguredServers()
         ]);
 
         // Filter containers to only show those that exist in the config file
@@ -77,7 +77,7 @@ export async function startServer(serverId) {
         // Set button to loading state
         this.setButtonLoading(button, 'Starting...');
         
-        await window.go.main.App.StartContainer(serverId);
+        await window.go.app.App.StartContainer(serverId);
         
         // Reset button state before refresh to avoid animation interruption
         this.resetButtonLoading(button, 'Start');
@@ -99,7 +99,7 @@ export async function stopServer(serverId) {
         // Set button to loading state
         this.setButtonLoading(button, 'Stopping...');
         
-        await window.go.main.App.StopContainer(serverId);
+        await window.go.app.App.StopContainer(serverId);
         
         // Reset button state before refresh to avoid animation interruption
         this.resetButtonLoading(button, 'Stop');
@@ -121,7 +121,7 @@ export async function restartServer(serverId) {
         // Set button to loading state
         this.setButtonLoading(button, 'Restarting...');
         
-        await window.go.main.App.RestartContainer(serverId);
+        await window.go.app.App.RestartContainer(serverId);
         
         // Reset button state before refresh to avoid animation interruption
         this.resetButtonLoading(button, 'Restart');
@@ -138,7 +138,7 @@ export async function restartServer(serverId) {
 
 export async function debugServer(serverId) {
     try {
-        const logs = await window.go.main.App.GetContainerLogs(serverId, 50);
+        const logs = await window.go.app.App.GetContainerLogs(serverId, 50);
         const container = this.servers.find(s => s.id === serverId);
         const containerName = container ? container.name : serverId;
         
@@ -212,7 +212,7 @@ export async function refreshResourceUsage() {
     
     try {
         // Get updated container information
-        const updatedContainers = await window.go.main.App.GetManagedContainers();
+        const updatedContainers = await window.go.app.App.GetManagedContainers();
         
         // Update all server data for each server without full re-render
         this.servers.forEach(server => {

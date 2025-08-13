@@ -36,7 +36,7 @@ export class Settings {
     async loadSettings() {
         try {
             // Load general app settings
-            const appConfig = await window.go.main.App.GetAppConfig();
+            const appConfig = await window.go.app.App.GetAppConfig();
             this.settings.general = {
                 autoStart: appConfig.auto_start || false,
                 startupPage: appConfig.startup_page || 'dashboard'
@@ -49,7 +49,7 @@ export class Settings {
             };
 
             // Load server defaults
-            const serverDefaults = await window.go.main.App.GetServerDefaults();
+            const serverDefaults = await window.go.app.App.GetServerDefaults();
             this.settings.servers = {
                 autoStart: serverDefaults.auto_start || false,
                 defaultPort: serverDefaults.default_port || 8000,
@@ -58,7 +58,7 @@ export class Settings {
             };
             
             // Load remote access settings
-            const remoteAccess = await window.go.main.App.GetRemoteAccess();
+            const remoteAccess = await window.go.app.App.GetRemoteAccess();
             this.settings.remoteAccess = {
                 remoteServer: remoteAccess.remote_server || 'remote.neobelt.io',
                 username: remoteAccess.username || '',
@@ -68,7 +68,7 @@ export class Settings {
             };
 
             // Load Claude integration settings
-            const claudeIntegration = await window.go.main.App.GetClaudeIntegration();
+            const claudeIntegration = await window.go.app.App.GetClaudeIntegration();
             this.settings.claude = {
                 enabled: claudeIntegration.enabled || false,
                 configPath: claudeIntegration.config_path || ''
@@ -622,10 +622,10 @@ export class Settings {
             };
 
             // Save to backend
-            await window.go.main.App.UpdateAppConfig(appConfig);
-            const containersRecreated = await window.go.main.App.UpdateServerDefaults(serverDefaults);
-            await window.go.main.App.UpdateRemoteAccess(remoteAccessConfig);
-            await window.go.main.App.UpdateClaudeIntegration(claudeIntegrationConfig);
+            await window.go.app.App.UpdateAppConfig(appConfig);
+            const containersRecreated = await window.go.app.App.UpdateServerDefaults(serverDefaults);
+            await window.go.app.App.UpdateRemoteAccess(remoteAccessConfig);
+            await window.go.app.App.UpdateClaudeIntegration(claudeIntegrationConfig);
 
             // Update local settings
             this.settings.general = {
@@ -793,10 +793,10 @@ export class Settings {
                         config_path: ''
                     };
 
-                    await window.go.main.App.UpdateAppConfig(defaultAppConfig);
-                    await window.go.main.App.UpdateServerDefaults(defaultServerDefaults);
-                    await window.go.main.App.UpdateRemoteAccess(defaultRemoteAccess);
-                    await window.go.main.App.UpdateClaudeIntegration(defaultClaudeIntegration);
+                    await window.go.app.App.UpdateAppConfig(defaultAppConfig);
+                    await window.go.app.App.UpdateServerDefaults(defaultServerDefaults);
+                    await window.go.app.App.UpdateRemoteAccess(defaultRemoteAccess);
+                    await window.go.app.App.UpdateClaudeIntegration(defaultClaudeIntegration);
                     
                     // Update the UI - General settings
                     document.getElementById('generalAutoStart').checked = false;
@@ -908,7 +908,7 @@ export class Settings {
                 detectBtn.textContent = 'Detecting...';
             }
             
-            const detectedPath = await window.go.main.App.DetectClaudeConfig();
+            const detectedPath = await window.go.app.App.DetectClaudeConfig();
             
             // Update the path field
             const pathField = document.getElementById('claudeConfigPath');
@@ -997,7 +997,7 @@ export class Settings {
                 testBtn.textContent = 'Testing...';
             }
             
-            const testResult = await window.go.main.App.TestClaudeConfig(configPath);
+            const testResult = await window.go.app.App.TestClaudeConfig(configPath);
             
             const content = `
                 <div class="text-center space-y-4">
@@ -1050,7 +1050,7 @@ export class Settings {
         logger.info('Browsing for Claude configuration file...');
         
         try {
-            const selectedPath = await window.go.main.App.SelectClaudeConfigFile();
+            const selectedPath = await window.go.app.App.SelectClaudeConfigFile();
             
             // Update the path field
             const pathField = document.getElementById('claudeConfigPath');
@@ -1100,7 +1100,7 @@ export class Settings {
                 cleanupBtn.textContent = 'Cleaning...';
             }
             
-            await window.go.main.App.CleanupClaudeConfiguration();
+            await window.go.app.App.CleanupClaudeConfiguration();
             
             const content = `
                 <div class="text-center space-y-4">
@@ -1149,7 +1149,7 @@ export class Settings {
 
     async openLogsDirectory() {
         try {
-            await window.go.main.App.OpenLogsDirectory();
+            await window.go.app.App.OpenLogsDirectory();
         } catch (error) {
             logger.error('Failed to open logs directory:', error);
         }
@@ -1188,7 +1188,7 @@ export class Settings {
         document.getElementById('confirm-clear-logs')?.addEventListener('click', async () => {
             Modal.hide();
             try {
-                await window.go.main.App.ClearAllLogs();
+                await window.go.app.App.ClearAllLogs();
                 
                 const successContent = `
                     <div class="text-center space-y-4">
@@ -1293,7 +1293,7 @@ export class Settings {
             Modal.hide();
 
             try {
-                const exportPath = await window.go.main.App.ExportConfiguration(password);
+                const exportPath = await window.go.app.App.ExportConfiguration(password);
                 
                 const successContent = `
                     <div class="text-center space-y-4">
@@ -1348,7 +1348,7 @@ export class Settings {
     async importConfiguration() {
         try {
             // Use Wails native file dialog to select import file
-            const fileContent = await window.go.main.App.SelectImportFile();
+            const fileContent = await window.go.app.App.SelectImportFile();
             
             // If file was selected successfully, show password dialog
             this.handleImportData(fileContent);
@@ -1438,7 +1438,7 @@ export class Settings {
 
             try {
                 // Pass the file content directly to the backend
-                await window.go.main.App.ImportConfiguration(fileContent, password);
+                await window.go.app.App.ImportConfiguration(fileContent, password);
                 
                 const successContent = `
                     <div class="text-center space-y-4">
@@ -1573,7 +1573,7 @@ export class Settings {
                 generateBtn.textContent = 'Generating...';
             }
             
-            const keyPair = await window.go.main.App.GenerateSSHKeys();
+            const keyPair = await window.go.app.App.GenerateSSHKeys();
             
             // Update local settings
             this.settings.remoteAccess.privateKey = keyPair.private_key;

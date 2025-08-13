@@ -1,4 +1,4 @@
-package main
+package version
 
 // Build-time variables set via -ldflags during compilation
 var (

@@ -1,5 +1,5 @@
 import Modal from './Modal.js';
-import { CheckDockerStatus, StartDockerDesktop, OpenDockerDesktopDownloadURL } from '../../wailsjs/go/main/App.js';
+import { CheckDockerStatus, StartDockerDesktop, OpenDockerDesktopDownloadURL } from '../../wailsjs/go/app/App.js';
 import { logger } from '../utils/logger.js';
 
 export class DockerStatusModal {

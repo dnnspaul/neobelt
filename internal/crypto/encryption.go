@@ -1,4 +1,4 @@
-package main
+package crypto
 
 import (
 	"crypto/aes"
@@ -11,6 +11,7 @@ import (
 	"io"
 
 	"golang.org/x/crypto/pbkdf2"
+	"neobelt/internal/config"
 )
 
 // EncryptedData represents the structure of encrypted configuration data
@@ -22,7 +23,7 @@ type EncryptedData struct {
 }
 
 // EncryptConfiguration encrypts the configuration data with a password
-func EncryptConfiguration(config *Configuration, password string) ([]byte, error) {
+func EncryptConfiguration(config *config.Configuration, password string) ([]byte, error) {
 	if config == nil {
 		return nil, fmt.Errorf("configuration is nil")
 	}
@@ -85,7 +86,7 @@ func EncryptConfiguration(config *Configuration, password string) ([]byte, error
 }
 
 // DecryptConfiguration decrypts the configuration data with a password
-func DecryptConfiguration(encryptedData []byte, password string) (*Configuration, error) {
+func DecryptConfiguration(encryptedData []byte, password string) (*config.Configuration, error) {
 	if len(encryptedData) == 0 {
 		return nil, fmt.Errorf("encrypted data is empty")
 	}
@@ -143,7 +144,7 @@ func DecryptConfiguration(encryptedData []byte, password string) (*Configuration
 	}
 
 	// Parse configuration
-	var config Configuration
+	var config config.Configuration
 	if err := json.Unmarshal(plaintext, &config); err != nil {
 		return nil, fmt.Errorf("failed to parse decrypted configuration: %w", err)
 	}

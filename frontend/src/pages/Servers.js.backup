@@ -300,8 +300,8 @@ export class Servers {
         try {
             // Load both Docker containers and configured servers
             const [containers, configuredServers] = await Promise.all([
-                window.go.main.App.GetManagedContainers(),
-                window.go.main.App.GetConfiguredServers()
+                window.go.app.App.GetManagedContainers(),
+                window.go.app.App.GetConfiguredServers()
             ]);
 
             // Filter containers to only show those that exist in the config file
@@ -462,7 +462,7 @@ export class Servers {
 
     async startServer(serverId) {
         try {
-            await window.go.main.App.StartContainer(serverId);
+            await window.go.app.App.StartContainer(serverId);
             await this.loadServers(); // Refresh the list
         } catch (error) {
             console.error('Failed to start server:', error);
@@ -472,7 +472,7 @@ export class Servers {
 
     async stopServer(serverId) {
         try {
-            await window.go.main.App.StopContainer(serverId);
+            await window.go.app.App.StopContainer(serverId);
             await this.loadServers(); // Refresh the list
         } catch (error) {
             console.error('Failed to stop server:', error);
@@ -482,7 +482,7 @@ export class Servers {
 
     async restartServer(serverId) {
         try {
-            await window.go.main.App.RestartContainer(serverId);
+            await window.go.app.App.RestartContainer(serverId);
             await this.loadServers(); // Refresh the list
         } catch (error) {
             console.error('Failed to restart server:', error);
@@ -525,7 +525,7 @@ export class Servers {
         }
 
         try {
-            const logs = await window.go.main.App.GetContainerLogs(serverId, 50);
+            const logs = await window.go.app.App.GetContainerLogs(serverId, 50);
             
             const content = `
                 <div class="space-y-4">
@@ -674,7 +674,7 @@ export class Servers {
             console.log('Attempting to remove container:', serverId);
             
             // The serverId is actually the container ID
-            await window.go.main.App.RemoveContainer(serverId, true); // Force remove
+            await window.go.app.App.RemoveContainer(serverId, true); // Force remove
             
             console.log('Container removal succeeded, refreshing servers list');
             await this.loadServers(); // Refresh the list
@@ -725,7 +725,7 @@ export class Servers {
     async showAddServerWizard() {
         try {
             // Get installed servers (those with pulled images)
-            const installedServers = await window.go.main.App.GetInstalledServers();
+            const installedServers = await window.go.app.App.GetInstalledServers();
             
             const content = `
                 <div class="space-y-6">
@@ -876,7 +876,7 @@ export class Servers {
     async showManageInstalledServers() {
         try {
             // Get installed servers with version information
-            const serversWithVersionInfo = await window.go.main.App.GetInstalledServersWithVersionCheck();
+            const serversWithVersionInfo = await window.go.app.App.GetInstalledServersWithVersionCheck();
             
             if (serversWithVersionInfo.length === 0) {
                 this.showEmptyInstalledServersModal();
@@ -1093,7 +1093,7 @@ export class Servers {
 
     async deleteInstalledServer(serverId, removeImage) {
         try {
-            await window.go.main.App.RemoveInstalledServer(serverId, removeImage);
+            await window.go.app.App.RemoveInstalledServer(serverId, removeImage);
             
             // Show success message and refresh the installed servers view
             this.showSuccessModal('Server Deleted', 'Installed server has been successfully removed.');
@@ -1395,7 +1395,7 @@ export class Servers {
         // Get all currently configured servers to check for port conflicts
         let configuredServers = [];
         try {
-            configuredServers = await window.go.main.App.GetConfiguredServers();
+            configuredServers = await window.go.app.App.GetConfiguredServers();
         } catch (error) {
             console.warn('Failed to get configured servers for port checking:', error);
         }
@@ -1421,7 +1421,7 @@ export class Servers {
         // Get server defaults for configuration
         let serverDefaults = {};
         try {
-            serverDefaults = await window.go.main.App.GetServerDefaults();
+            serverDefaults = await window.go.app.App.GetServerDefaults();
         } catch (error) {
             console.warn('Failed to load server defaults, using fallbacks:', error);
             serverDefaults = {
@@ -1493,13 +1493,13 @@ export class Servers {
             };
 
             console.log('Creating container with config:', config);
-            const containerId = await window.go.main.App.CreateContainer(config);
+            const containerId = await window.go.app.App.CreateContainer(config);
             console.log('Container created successfully with ID:', containerId);
             
             // Start the container only if auto-start is enabled in server defaults
             if (serverDefaults.auto_start) {
                 console.log('Auto-start enabled, starting container:', containerId);
-                await window.go.main.App.StartContainer(containerId);
+                await window.go.app.App.StartContainer(containerId);
                 console.log('Container started automatically');
             } else {
                 console.log('Auto-start disabled, container created but not started');
@@ -1508,7 +1508,7 @@ export class Servers {
             // Create a configured server entry for this container
             try {
                 console.log('Creating configured server entry');
-                await window.go.main.App.CreateConfiguredServer(
+                await window.go.app.App.CreateConfiguredServer(
                     server.id,
                     containerName,
                     containerId,
@@ -1572,7 +1572,7 @@ export class Servers {
             
             // Get updated container info
             console.log('Fetching managed containers...');
-            const containers = await window.go.main.App.GetManagedContainers();
+            const containers = await window.go.app.App.GetManagedContainers();
             console.log(`Found ${containers.length} managed containers:`, containers.map(c => ({ id: c.id, name: c.name, state: c.state })));
             
             // Try different matching strategies
@@ -1600,7 +1600,7 @@ export class Servers {
                 // Try to get ALL containers (not just managed ones) for debugging
                 try {
                     console.log('Attempting to get container logs to verify container exists...');
-                    const logs = await window.go.main.App.GetContainerLogs(containerId, 10);
+                    const logs = await window.go.app.App.GetContainerLogs(containerId, 10);
                     console.log('Container logs retrieved successfully, container exists but not in managed list');
                     
                     // Show a different error message with more debugging information
@@ -1622,7 +1622,7 @@ export class Servers {
             } else {
                 console.log('Container has issues, getting logs...');
                 // Container has issues, show detailed modal with logs
-                const logs = await window.go.main.App.GetContainerLogs(containerId, 50);
+                const logs = await window.go.app.App.GetContainerLogs(containerId, 50);
                 console.log('Container logs retrieved for troubleshooting');
                 this.showContainerIssueModal(containerName, container, logs);
             }
@@ -1887,7 +1887,7 @@ export class Servers {
                 const containerId = e.target.getAttribute('data-container-id');
                 Modal.hide();
                 try {
-                    await window.go.main.App.StartContainer(containerId);
+                    await window.go.app.App.StartContainer(containerId);
                     await this.loadServers();
                     this.showSuccessModal('Container Restarted', 'Container has been restarted. Please check if it\'s running properly now.');
                 } catch (error) {

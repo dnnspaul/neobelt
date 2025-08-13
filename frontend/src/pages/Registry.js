@@ -237,16 +237,16 @@ export class Registry {
 
         try {
             // Fetch available registries first
-            const registries = await window.go.main.App.GetRegistries();
+            const registries = await window.go.app.App.GetRegistries();
             this.availableRegistries = registries;
 
             // Call the backend to fetch servers from all configured registries
-            const servers = await window.go.main.App.FetchAllRegistries();
+            const servers = await window.go.app.App.FetchAllRegistries();
             
             // Get installed servers to check installation status
             let installedServers = [];
             try {
-                installedServers = await window.go.main.App.GetInstalledServers();
+                installedServers = await window.go.app.App.GetInstalledServers();
             } catch (error) {
                 logger.warning('Failed to fetch installed servers:', error);
             }
@@ -540,7 +540,7 @@ export class Registry {
 
     async showManageRegistriesModal() {
         try {
-            const registries = await window.go.main.App.GetRegistries();
+            const registries = await window.go.app.App.GetRegistries();
             
             const content = `
                 <div class="space-y-6">
@@ -692,7 +692,7 @@ export class Registry {
                     `;
                     
                     try {
-                        await window.go.main.App.RemoveCustomRegistry(registry.url);
+                        await window.go.app.App.RemoveCustomRegistry(registry.url);
                         Modal.hide();
                         // Refresh the servers list
                         this.loadServers();
@@ -915,7 +915,7 @@ export class Registry {
             
             // Call the backend InstallServer method
             addLogEntry('Downloading Docker image (this may take a few minutes)...');
-            await window.go.main.App.InstallServer(registryServer);
+            await window.go.app.App.InstallServer(registryServer);
             
             addLogEntry('Docker image downloaded successfully', 'success');
             addLogEntry('Server added to installed servers', 'success');
@@ -1123,7 +1123,7 @@ export class Registry {
                     const removeConfigData = document.getElementById('remove-config-data')?.checked || false;
                     
                     // Find the installed server by Docker image
-                    const installedServers = await window.go.main.App.GetInstalledServers();
+                    const installedServers = await window.go.app.App.GetInstalledServers();
                     const installedServer = installedServers.find(installed => installed.docker_image === server.dockerImage);
                     
                     if (installedServer) {
@@ -1131,7 +1131,7 @@ export class Registry {
                         let removedConfiguredServers = false;
                         if (removeConfigData) {
                             try {
-                                const configuredServers = await window.go.main.App.GetConfiguredServers();
+                                const configuredServers = await window.go.app.App.GetConfiguredServers();
                                 const relatedConfiguredServers = configuredServers.filter(
                                     configured => configured.installed_server_id === installedServer.id
                                 );
@@ -1139,7 +1139,7 @@ export class Registry {
                                 // Remove each configured server (this will also remove the Docker containers)
                                 for (const configuredServer of relatedConfiguredServers) {
                                     if (configuredServer.container_id) {
-                                        await window.go.main.App.RemoveContainer(configuredServer.container_id, true);
+                                        await window.go.app.App.RemoveContainer(configuredServer.container_id, true);
                                     }
                                 }
                                 
@@ -1153,7 +1153,7 @@ export class Registry {
                         }
                         
                         // Call backend to remove installed server and Docker image
-                        await window.go.main.App.RemoveInstalledServer(installedServer.id, true);
+                        await window.go.app.App.RemoveInstalledServer(installedServer.id, true);
                         
                         // Update local UI state
                         const serverToUpdate = this.servers.find(s => s.id === server.id);
@@ -1553,10 +1553,10 @@ export class Registry {
                 try {
                     if (isEditing) {
                         // Update existing registry
-                        await window.go.main.App.UpdateCustomRegistry(editRegistry.url, name, url, description, authType, authUsername, authPassword, authHeader);
+                        await window.go.app.App.UpdateCustomRegistry(editRegistry.url, name, url, description, authType, authUsername, authPassword, authHeader);
                     } else {
                         // Add new registry
-                        await window.go.main.App.AddCustomRegistry(name, url, description, authType, authUsername, authPassword, authHeader);
+                        await window.go.app.App.AddCustomRegistry(name, url, description, authType, authUsername, authPassword, authHeader);
                     }
                     
                     // Success - show success message briefly then close modal

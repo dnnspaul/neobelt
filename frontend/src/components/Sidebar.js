@@ -1,5 +1,5 @@
 import router from '../router.js';
-import { GetAppVersion } from '../../wailsjs/go/main/App.js';
+import { GetAppVersion } from '../../wailsjs/go/app/App.js';
 import { logger } from '../utils/logger.js';
 
 export class Sidebar {

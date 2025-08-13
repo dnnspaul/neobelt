@@ -153,8 +153,8 @@ export class Dashboard {
             
             // Load servers and recent logs in parallel
             const [servers, recentLogs] = await Promise.all([
-                window.go.main.App.GetManagedContainers(),
-                window.go.main.App.GetRecentLogMessages(100)
+                window.go.app.App.GetManagedContainers(),
+                window.go.app.App.GetRecentLogMessages(100)
             ]);
             
             logger.debug('Loaded servers:', servers ? servers.length : 0);

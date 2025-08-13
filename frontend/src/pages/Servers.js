@@ -205,7 +205,7 @@ export class Servers {
 
         try {
             // Get configured servers to find the configuration for this container
-            const configuredServers = await window.go.main.App.GetConfiguredServers();
+            const configuredServers = await window.go.app.App.GetConfiguredServers();
             logger.debug('Configured servers:', configuredServers);
             
             // Find the configured server that matches this container
@@ -223,7 +223,7 @@ export class Servers {
             logger.debug('Current configured server:', configuredServer);
             
             // Get the installed server metadata to have the registry information
-            const installedServers = await window.go.main.App.GetInstalledServers();
+            const installedServers = await window.go.app.App.GetInstalledServers();
             const installedServer = installedServers.find(is => is.id === configuredServer.server_id);
             logger.debug('Installed server metadata:', installedServer);
             
@@ -555,7 +555,7 @@ export class Servers {
         }
 
         try {
-            const logs = await window.go.main.App.GetContainerLogs(serverId, 500);
+            const logs = await window.go.app.App.GetContainerLogs(serverId, 500);
             
             const content = `
                 <div class="space-y-4">
@@ -634,7 +634,7 @@ export class Servers {
     async confirmRemoveServer(serverId) {
         try {
             logger.debug('Attempting to remove server:', serverId);
-            await window.go.main.App.RemoveContainer(serverId, true);
+            await window.go.app.App.RemoveContainer(serverId, true);
             logger.debug('Server removal successful:', serverId);
             Modal.hide();
             // Refresh the servers list
@@ -650,7 +650,7 @@ export class Servers {
     async showManageInstalledServers() {
         try {
             // Get installed servers with version information
-            const serversWithVersionInfo = await window.go.main.App.GetInstalledServersWithVersionCheck();
+            const serversWithVersionInfo = await window.go.app.App.GetInstalledServersWithVersionCheck();
             
             if (serversWithVersionInfo.length === 0) {
                 this.showEmptyInstalledServersModal();
@@ -828,7 +828,7 @@ export class Servers {
                 setTimeout(() => {
                     document.querySelector('.confirm-delete-btn')?.addEventListener('click', async () => {
                         try {
-                            await window.go.main.App.DeleteInstalledServer(serverId);
+                            await window.go.app.App.DeleteInstalledServer(serverId);
                             Modal.hide();
                             this.showSuccessModal('Success', 'Installed server deleted successfully.');
                             
@@ -860,7 +860,7 @@ export class Servers {
     async showAddServerWizard() {
         try {
             // Get installed servers (those with pulled images)
-            const installedServers = await window.go.main.App.GetInstalledServers();
+            const installedServers = await window.go.app.App.GetInstalledServers();
             
             const content = `
                 <div class="space-y-6">
@@ -1157,7 +1157,7 @@ export class Servers {
             // Get server defaults for configuration
             let serverDefaults = {};
             try {
-                serverDefaults = await window.go.main.App.GetServerDefaults();
+                serverDefaults = await window.go.app.App.GetServerDefaults();
             } catch (error) {
                 logger.warning('Failed to load server defaults, using fallbacks:', error);
                 serverDefaults = {
@@ -1203,7 +1203,7 @@ export class Servers {
             logger.debug('Attempting to pull Docker image:', dockerImage);
             let installedServerId = null;
             try {
-                await window.go.main.App.PullImage(dockerImage);
+                await window.go.app.App.PullImage(dockerImage);
                 logger.debug('Image pulled successfully or already exists');
                 
                 // Add the image to installed servers list with "Custom Docker" source
@@ -1233,14 +1233,14 @@ export class Servers {
             };
 
             logger.debug('Creating manual container with config:', config);
-            const containerId = await window.go.main.App.CreateContainer(config);
+            const containerId = await window.go.app.App.CreateContainer(config);
             logger.debug('Manual container created successfully with ID:', containerId);
             
             // Start the container only if auto-start is enabled in server defaults
             const shouldAutoStart = serverDefaults.auto_start;
             if (shouldAutoStart) {
                 logger.debug('Auto-start enabled, starting container:', containerId);
-                await window.go.main.App.StartContainer(containerId);
+                await window.go.app.App.StartContainer(containerId);
                 logger.debug('Container started automatically');
             } else {
                 logger.debug('Auto-start disabled, container created but not started');
@@ -1253,7 +1253,7 @@ export class Servers {
             if (installedServerId) {
                 try {
                     logger.debug('Creating configured server entry for manual setup with server ID:', installedServerId);
-                    await window.go.main.App.CreateConfiguredServer(
+                    await window.go.app.App.CreateConfiguredServer(
                         installedServerId,
                         containerName,
                         containerId,
@@ -1289,7 +1289,7 @@ export class Servers {
             const description = `Custom Docker container: ${containerName}`;
             
             // Add to installed servers via backend API and return the generated ID
-            const serverId = await window.go.main.App.InstallManualServer(dockerImage, containerName, description);
+            const serverId = await window.go.app.App.InstallManualServer(dockerImage, containerName, description);
             logger.debug('Successfully added manual image to installed servers:', dockerImage, 'with ID:', serverId);
             return serverId;
         } catch (error) {
@@ -1345,7 +1345,7 @@ export class Servers {
             // Get server defaults for configuration
             let serverDefaults = {};
             try {
-                serverDefaults = await window.go.main.App.GetServerDefaults();
+                serverDefaults = await window.go.app.App.GetServerDefaults();
             } catch (error) {
                 logger.warning('Failed to load server defaults, using fallbacks:', error);
                 serverDefaults = {
@@ -1476,20 +1476,20 @@ export class Servers {
             
             // Step 1: Stop the container
             logger.debug('Stopping container...');
-            await window.go.main.App.StopContainer(serverId);
+            await window.go.app.App.StopContainer(serverId);
             
             // Step 2: Remove the old container
             logger.debug('Removing old container...');
-            await window.go.main.App.RemoveContainer(serverId, true);
+            await window.go.app.App.RemoveContainer(serverId, true);
             
             // Step 3: Create new container with updated configuration
             logger.debug('Creating new container with updated configuration...');
-            const newContainerId = await window.go.main.App.CreateContainer(newConfig);
+            const newContainerId = await window.go.app.App.CreateContainer(newConfig);
             logger.debug('New container created with ID:', newContainerId);
             
             // Step 4: Start the new container
             logger.debug('Starting new container...');
-            await window.go.main.App.StartContainer(newContainerId);
+            await window.go.app.App.StartContainer(newContainerId);
             
             // Handle Claude Desktop integration if requested
             await this.handleClaudeIntegration(newConfig.name, newConfig.port);
@@ -1498,7 +1498,7 @@ export class Servers {
             try {
                 logger.debug('Updating configured server entry...');
                 const serverIdForConfig = (installedServer?.id) || containerConfig.server_id;
-                await window.go.main.App.CreateConfiguredServer(
+                await window.go.app.App.CreateConfiguredServer(
                     serverIdForConfig,
                     newConfig.name,
                     newContainerId,
@@ -1526,7 +1526,7 @@ export class Servers {
             // Try to restart the original container if it exists
             try {
                 logger.debug('Attempting to restart original container...');
-                await window.go.main.App.StartContainer(serverId);
+                await window.go.app.App.StartContainer(serverId);
             } catch (restartError) {
                 logger.error('Failed to restart original container:', restartError);
             }
@@ -1691,7 +1691,7 @@ export class Servers {
         // Get all currently configured servers to check for port conflicts
         let configuredServers = [];
         try {
-            configuredServers = await window.go.main.App.GetConfiguredServers();
+            configuredServers = await window.go.app.App.GetConfiguredServers();
         } catch (error) {
             logger.warning('Failed to get configured servers for port checking:', error);
         }
@@ -1717,7 +1717,7 @@ export class Servers {
         // Get server defaults for configuration
         let serverDefaults = {};
         try {
-            serverDefaults = await window.go.main.App.GetServerDefaults();
+            serverDefaults = await window.go.app.App.GetServerDefaults();
         } catch (error) {
             logger.warning('Failed to load server defaults, using fallbacks:', error);
             serverDefaults = {
@@ -1789,14 +1789,14 @@ export class Servers {
             };
 
             logger.debug('Creating container with config:', config);
-            const containerId = await window.go.main.App.CreateContainer(config);
+            const containerId = await window.go.app.App.CreateContainer(config);
             logger.debug('Container created successfully with ID:', containerId);
             
             // Start the container only if auto-start is enabled in server defaults
             const shouldAutoStart = serverDefaults.auto_start;
             if (shouldAutoStart) {
                 logger.debug('Auto-start enabled, starting container:', containerId);
-                await window.go.main.App.StartContainer(containerId);
+                await window.go.app.App.StartContainer(containerId);
                 logger.debug('Container started automatically');
             } else {
                 logger.debug('Auto-start disabled, container created but not started');
@@ -1808,7 +1808,7 @@ export class Servers {
             // Create a configured server entry for this container
             try {
                 logger.debug('Creating configured server entry');
-                await window.go.main.App.CreateConfiguredServer(
+                await window.go.app.App.CreateConfiguredServer(
                     server.id,
                     containerName,
                     containerId,
@@ -1840,7 +1840,7 @@ export class Servers {
             logger.debug(`Checking container creation result for ID: ${containerId}, Name: ${containerName}, AutoStart: ${shouldAutoStart}`);
             
             // Get managed containers to verify the container exists and get its status
-            const containers = await window.go.main.App.GetManagedContainers();
+            const containers = await window.go.app.App.GetManagedContainers();
             if (!containers || !Array.isArray(containers)) {
                 logger.error('Failed to get managed containers or containers is not an array:', containers);
                 this.showErrorModal('Container Status Check Failed', 'Unable to verify container status. The container may have been created but status is unknown.');
@@ -1857,7 +1857,7 @@ export class Servers {
                 // Try to get ALL containers (not just managed ones) for debugging
                 try {
                     logger.debug('Attempting to get container logs to verify container exists...');
-                    const logs = await window.go.main.App.GetContainerLogs(containerId, 10);
+                    const logs = await window.go.app.App.GetContainerLogs(containerId, 10);
                     logger.debug('Container logs retrieved successfully, container exists but not in managed list');
                     
                     // Show a different error message with more debugging information
@@ -1883,7 +1883,7 @@ export class Servers {
             } else {
                 logger.debug('Container has issues, getting logs...');
                 // Container has issues, show detailed modal with logs
-                const logs = await window.go.main.App.GetContainerLogs(containerId, 50);
+                const logs = await window.go.app.App.GetContainerLogs(containerId, 50);
                 logger.debug('Container logs retrieved for troubleshooting');
                 this.showContainerIssueModal(containerName, container, logs);
             }
@@ -2000,7 +2000,7 @@ export class Servers {
     async initializeClaudeIntegrationSection() {
         try {
             // Check if Claude integration is enabled
-            const claudeIntegration = await window.go.main.App.GetClaudeIntegration();
+            const claudeIntegration = await window.go.app.App.GetClaudeIntegration();
             const claudeSection = document.getElementById('claude-integration-section');
             const addToClaudeCheckbox = document.getElementById('add-to-claude');
             
@@ -2045,7 +2045,7 @@ export class Servers {
             logger.debug('Adding MCP server to Claude Desktop configuration...');
             
             // Call the backend to handle Claude integration
-            await window.go.main.App.AddMCPServerToClaude(containerName, port);
+            await window.go.app.App.AddMCPServerToClaude(containerName, port);
             
             logger.debug('Successfully added MCP server to Claude Desktop configuration');
         } catch (error) {

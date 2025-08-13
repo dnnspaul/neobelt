@@ -1,4 +1,4 @@
-package main
+package config
 
 import (
 	"fmt"
@@ -7,6 +7,41 @@ import (
 
 	"github.com/spf13/viper"
 )
+
+// RegistryServer represents a server definition from a registry
+type RegistryServer struct {
+	Name                 string         `json:"name"`
+	Description          string         `json:"description"`
+	SetupDescription     string         `json:"setup_description"`
+	SupportURL           string         `json:"support_url"`
+	DockerImage          string         `json:"docker_image"`
+	Version              string         `json:"version"`
+	License              string         `json:"license"`
+	Maintainer           string         `json:"maintainer"`
+	Tags                 []string       `json:"tags"`
+	Architecture         []string       `json:"architecture"`
+	HealthCheck          map[string]any `json:"health_check"`
+	ResourceRequirements map[string]any `json:"resource_requirements"`
+	DockerCommand        string         `json:"docker_command"`
+	EnvironmentVariables map[string]any `json:"environment_variables"`
+	Ports                map[string]any `json:"ports"`
+	Volumes              []any          `json:"volumes"`
+	// Added fields to track source registry
+	SourceRegistryName string `json:"source_registry_name"`
+	SourceRegistryURL  string `json:"source_registry_url"`
+	IsOfficial         bool   `json:"is_official"`
+}
+
+// Registry structure
+type Registry struct {
+	Name         string `json:"name"`
+	URL          string `json:"url"`
+	Description  string `json:"description"`
+	AuthType     string `json:"auth_type"`     // "none", "basic", "header"
+	AuthUsername string `json:"auth_username"` // for basic auth
+	AuthPassword string `json:"auth_password"` // for basic auth
+	AuthHeader   string `json:"auth_header"`   // for custom header auth (e.g., "Authorization: Bearer token")
+}
 
 // Configuration represents the application configuration
 type Configuration struct {
@@ -389,4 +424,9 @@ func (cm *ConfigManager) GetConfigPath() string {
 func (cm *ConfigManager) GetLogDir() string {
 	configDir := filepath.Dir(cm.configPath)
 	return filepath.Join(configDir, "logs")
+}
+
+// SetConfig sets the configuration
+func (cm *ConfigManager) SetConfig(config *Configuration) {
+	cm.config = config
 }

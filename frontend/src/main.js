@@ -7,9 +7,9 @@ import { Registry } from './pages/Registry.js';
 import { Settings } from './pages/Settings.js';
 import DockerStatusModal from './components/DockerStatusModal.js';
 import { EventsOn } from '../wailsjs/runtime/runtime.js';
-import { GetAppConfig } from '../wailsjs/go/main/App.js';
+import { GetAppConfig } from '../wailsjs/go/app/App.js';
 import { initLogger, logger } from './utils/logger.js';
-import * as AppModule from '../wailsjs/go/main/App.js';
+import * as AppModule from '../wailsjs/go/app/App.js';
 
 class App {
     constructor() {
