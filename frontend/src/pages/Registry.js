@@ -256,9 +256,49 @@ export class Registry {
             installedServers.forEach(installed => {
                 installedImageMap.set(installed.docker_image, installed);
             });
+
+            // Add "Custom Docker" servers from installed servers that have that source
+            const customDockerServers = installedServers.filter(server => 
+                server.source_registry === 'Custom Docker'
+            ).map((server, index) => ({
+                id: `custom-${index}`,
+                name: server.name,
+                author: server.maintainer || 'Custom',
+                description: server.description,
+                version: server.version,
+                tags: server.tags || [],
+                installed: true, // Always true for custom docker servers
+                official: false, // Custom Docker servers are never official
+                lastUpdated: server.install_date ? new Date(server.install_date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+                dockerImage: server.docker_image,
+                setupDescription: server.setup_description,
+                supportURL: server.support_url,
+                license: server.license,
+                architecture: server.architecture || [],
+                healthCheck: server.health_check || {},
+                resourceRequirements: server.resource_requirements || {},
+                dockerCommand: server.docker_command || '',
+                environmentVariables: server.environment_variables || {},
+                ports: server.ports || {},
+                volumes: server.volumes || [],
+                sourceRegistryName: 'Custom Docker',
+                sourceRegistryURL: ''
+            }));
+
+            // Add Custom Docker to available registries if we have custom servers
+            if (customDockerServers.length > 0) {
+                const hasCustomDocker = this.availableRegistries.some(reg => reg.name === 'Custom Docker');
+                if (!hasCustomDocker) {
+                    this.availableRegistries.push({
+                        name: 'Custom Docker',
+                        description: 'Manually installed Docker images',
+                        url: ''
+                    });
+                }
+            }
             
             // Convert backend format to frontend format
-            this.servers = servers.map((server, index) => ({
+            const registryServers = servers.map((server, index) => ({
                 id: index + 1,
                 name: server.name,
                 author: server.maintainer,
@@ -283,6 +323,9 @@ export class Registry {
                 sourceRegistryURL: server.source_registry_url
             }));
 
+            // Combine registry servers with custom Docker servers
+            this.servers = [...registryServers, ...customDockerServers];
+            
             this.filteredServers = [...this.servers];
             this.filterServers();
         } catch (error) {

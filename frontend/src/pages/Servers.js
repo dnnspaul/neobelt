@@ -72,7 +72,12 @@ export class Servers {
 
     attachEventListeners() {
         // Load servers on page load
-        this.loadServers();
+        this.loadServers().then(() => {
+            // Ensure event listeners are attached after initial load
+            setTimeout(() => {
+                this.attachEventListenersAfterRender();
+            }, 100);
+        });
         handleExternalLinks();
     }
 
@@ -732,12 +737,15 @@ export class Servers {
                             <div class="flex items-center space-x-2">
                                 <h3 class="text-lg font-medium text-gray-900">${server.name}</h3>
                                 ${server.is_official ? '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">Official</span>' : ''}
+                                ${server.source_registry === 'Custom Docker' ? '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">Custom Docker</span>' : ''}
                             </div>
                             <p class="text-sm text-gray-600 mt-1">${server.description || 'No description available'}</p>
                             <div class="flex items-center space-x-4 mt-2 text-sm text-gray-500">
                                 <span>Version: <span class="font-medium">${server.version}</span></span>
                                 <span>•</span>
                                 <span>Image: <code class="text-xs bg-gray-100 px-1 py-0.5 rounded">${server.docker_image}</code></span>
+                                <span>•</span>
+                                <span>Registry: <span class="font-medium">${server.source_registry || 'Unknown'}</span></span>
                                 <span>•</span>
                                 <span>Installed: ${new Date(server.install_date).toLocaleDateString()}</span>
                             </div>
@@ -1001,7 +1009,294 @@ export class Servers {
     }
 
     showManualInstallWizard() {
-        this.showErrorModal('Not Implemented', 'Manual Docker setup is not yet implemented.');
+        this.showManualDockerSetupForm();
+    }
+
+    showManualDockerSetupForm() {
+        const content = `
+            <div class="space-y-6">
+                <div class="text-center">
+                    <p class="text-gray-600">Create a custom MCP server from any Docker container</p>
+                </div>
+
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Container Name <span class="text-red-500">*</span></label>
+                        <input type="text" id="container-name" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500" placeholder="my-mcp-server">
+                        <p class="text-xs text-gray-500 mt-1">A unique name for your container</p>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Docker Image <span class="text-red-500">*</span></label>
+                        <input type="text" id="docker-image" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500" placeholder="user/my-mcp-server:latest">
+                        <p class="text-xs text-gray-500 mt-1">The Docker image to use (e.g., nginx:latest, custom/image:v1.0)</p>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Container Port (Internal)</label>
+                        <input type="number" id="container-port" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500" placeholder="3000" min="1" max="65535">
+                        <p class="text-xs text-gray-500 mt-1">The port your application listens on inside the container (leave empty if not needed)</p>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Docker Command (Optional)</label>
+                        <input type="text" id="docker-command" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500" placeholder="node server.js">
+                        <p class="text-xs text-gray-500 mt-1">Custom command to run (leave empty to use image default)</p>
+                    </div>
+                    
+                    <div>
+                        <div class="flex items-center justify-between mb-2">
+                            <label class="block text-sm font-medium text-gray-700">Environment Variables</label>
+                            <button type="button" id="add-env-var-btn" class="flex items-center px-2 py-1 text-xs font-medium text-primary-600 bg-primary-50 border border-primary-200 rounded hover:bg-primary-100 focus:outline-none focus:ring-1 focus:ring-primary-500">
+                                <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                                </svg>
+                                Add Variable
+                            </button>
+                        </div>
+                        <div id="env-vars-container" class="space-y-2">
+                            <div class="env-var-row flex items-center space-x-2" data-required="false">
+                                <div class="flex-1">
+                                    <input type="text" class="env-var-name w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500 text-sm" placeholder="Variable name">
+                                </div>
+                                <div class="flex-1">
+                                    <input type="text" class="env-var-value w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500 text-sm" placeholder="Value">
+                                </div>
+                                <button type="button" class="remove-env-var-btn p-1 text-red-500 hover:text-red-700" title="Remove variable">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Volume Mounts (Optional)</label>
+                        <textarea id="volume-mounts" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500" rows="3" placeholder="/host/path:/container/path
+/host/config:/app/config"></textarea>
+                        <p class="text-xs text-gray-500 mt-1">One mount per line in host_path:container_path format</p>
+                    </div>
+                    
+                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-4" id="claude-integration-section">
+                        <h4 class="font-medium text-gray-900 mb-3">Claude Desktop Integration</h4>
+                        <div class="flex items-center">
+                            <input type="checkbox" id="add-to-claude" class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded">
+                            <label for="add-to-claude" class="ml-2 block text-sm text-gray-700">
+                                Add to Claude Desktop configuration
+                            </label>
+                        </div>
+                        <p class="text-xs text-blue-700 mt-2">
+                            <svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                            This will automatically register the MCP server with Claude Desktop using Neobelt's MCP-Proxy functionality. Claude integration must be enabled and configured in Settings.
+                        </p>
+                    </div>
+                </div>
+                
+                <div class="flex justify-end space-x-3 pt-4 border-t border-gray-200">
+                    <button class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50" onclick="Modal.hide()">
+                        Cancel
+                    </button>
+                    <button id="create-manual-container-btn" class="px-4 py-2 text-sm font-medium text-white bg-primary-600 border border-transparent rounded-md hover:bg-primary-700">
+                        Create MCP Server
+                    </button>
+                </div>
+            </div>
+        `;
+
+        Modal.show(content, {
+            title: 'Manual Docker Setup',
+            size: 'xl'
+        });
+
+        // Add event handlers
+        setTimeout(() => {
+            document.getElementById('create-manual-container-btn')?.addEventListener('click', () => {
+                this.createManualContainerFromForm();
+            });
+
+            // Initialize Claude integration section
+            this.initializeClaudeIntegrationSection();
+
+            // Add environment variable functionality
+            this.attachEnvVarEventListeners();
+        }, 100);
+    }
+
+    async createManualContainerFromForm() {
+        const containerName = document.getElementById('container-name').value.trim();
+        const dockerImage = document.getElementById('docker-image').value.trim();
+        const containerPortInput = document.getElementById('container-port').value.trim();
+        const dockerCommand = document.getElementById('docker-command').value.trim();
+        const volumesText = document.getElementById('volume-mounts').value.trim();
+
+        // Validation
+        if (!containerName) {
+            this.showErrorModal('Validation Error', 'Container name is required.');
+            return;
+        }
+
+        if (!dockerImage) {
+            this.showErrorModal('Validation Error', 'Docker image is required.');
+            return;
+        }
+
+        // Parse container port (internal port)
+        let containerPort = 0;
+        if (containerPortInput) {
+            containerPort = parseInt(containerPortInput);
+            if (isNaN(containerPort) || containerPort < 1 || containerPort > 65535) {
+                this.showErrorModal('Validation Error', 'Container port must be a valid port number (1-65535).');
+                return;
+            }
+        }
+
+        try {
+            // Get server defaults for configuration
+            let serverDefaults = {};
+            try {
+                serverDefaults = await window.go.main.App.GetServerDefaults();
+            } catch (error) {
+                logger.warning('Failed to load server defaults, using fallbacks:', error);
+                serverDefaults = {
+                    auto_start: false,
+                    default_port: 8000,
+                    max_memory_mb: 512,
+                    restart_on_failure: true
+                };
+            }
+            
+            // Find available host port starting from default port range
+            const port = await this.findAvailablePort(serverDefaults.default_port || 8000);
+
+            // Parse environment variables from individual input fields
+            const environment = {};
+            const envVarRows = document.querySelectorAll('.env-var-row');
+            envVarRows.forEach(row => {
+                const nameInput = row.querySelector('.env-var-name');
+                const valueInput = row.querySelector('.env-var-value');
+                
+                if (nameInput && valueInput) {
+                    const name = nameInput.value.trim();
+                    const value = valueInput.value.trim();
+                    
+                    if (name) {
+                        environment[name] = value;
+                    }
+                }
+            });
+
+            // Parse volume mounts
+            const volumes = {};
+            if (volumesText) {
+                volumesText.split('\n').forEach(line => {
+                    const [hostPath, containerPath] = line.split(':');
+                    if (hostPath && containerPath) {
+                        volumes[hostPath.trim()] = containerPath.trim();
+                    }
+                });
+            }
+
+            // First, try to pull the image if it doesn't exist
+            logger.debug('Attempting to pull Docker image:', dockerImage);
+            let installedServerId = null;
+            try {
+                await window.go.main.App.PullImage(dockerImage);
+                logger.debug('Image pulled successfully or already exists');
+                
+                // Add the image to installed servers list with "Custom Docker" source
+                logger.debug('Adding manually pulled image to installed servers');
+                installedServerId = await this.addManualImageToInstalled(dockerImage, containerName);
+                logger.debug('Created installed server with ID:', installedServerId);
+            } catch (pullError) {
+                logger.warning('Failed to pull image, but continuing with container creation:', pullError);
+                // Continue anyway - maybe the image exists locally but pull failed for other reasons
+            }
+
+            const config = {
+                name: containerName,
+                image: dockerImage,
+                port: port,
+                container_port: containerPort,
+                environment: environment,
+                volumes: volumes,
+                docker_command: dockerCommand,
+                memory_limit_mb: serverDefaults.max_memory_mb || 512,
+                restart_policy: serverDefaults.restart_on_failure ? "on-failure" : "no",
+                labels: {
+                    "neobelt.server-id": installedServerId || `manual-${Date.now()}`,
+                    "neobelt.server-name": containerName,
+                    "neobelt.manual-setup": "true"
+                }
+            };
+
+            logger.debug('Creating manual container with config:', config);
+            const containerId = await window.go.main.App.CreateContainer(config);
+            logger.debug('Manual container created successfully with ID:', containerId);
+            
+            // Start the container only if auto-start is enabled in server defaults
+            const shouldAutoStart = serverDefaults.auto_start;
+            if (shouldAutoStart) {
+                logger.debug('Auto-start enabled, starting container:', containerId);
+                await window.go.main.App.StartContainer(containerId);
+                logger.debug('Container started automatically');
+            } else {
+                logger.debug('Auto-start disabled, container created but not started');
+            }
+            
+            // Handle Claude Desktop integration if requested
+            await this.handleClaudeIntegration(containerName, port);
+            
+            // Create a configured server entry for this container only if we have an installed server ID
+            if (installedServerId) {
+                try {
+                    logger.debug('Creating configured server entry for manual setup with server ID:', installedServerId);
+                    await window.go.main.App.CreateConfiguredServer(
+                        installedServerId,
+                        containerName,
+                        containerId,
+                        port,
+                        environment,
+                        volumes
+                    );
+                    logger.debug('Configured server entry created successfully');
+                } catch (configError) {
+                    logger.warning('Failed to create configured server entry:', configError);
+                    // Don't fail the whole operation - container was created successfully
+                }
+            } else {
+                logger.warning('Skipping configured server creation - no installed server ID available');
+            }
+            
+            Modal.hide();
+            logger.debug('Refreshing servers list...');
+            await this.loadServers(); // Refresh the list
+            
+            // Check container status and show appropriate modal
+            logger.debug('Checking manual container creation result...');
+            await this.showContainerCreationResult(containerId, containerName, shouldAutoStart);
+        } catch (error) {
+            logger.error('Failed to create manual container:', error);
+            this.showErrorModal('Create Manual MCP Server Failed', `Failed to create manual MCP Server: ${error.message || error}`);
+        }
+    }
+
+    async addManualImageToInstalled(dockerImage, containerName) {
+        try {
+            // Create an installed server entry for the manually pulled image
+            const description = `Custom Docker container: ${containerName}`;
+            
+            // Add to installed servers via backend API and return the generated ID
+            const serverId = await window.go.main.App.InstallManualServer(dockerImage, containerName, description);
+            logger.debug('Successfully added manual image to installed servers:', dockerImage, 'with ID:', serverId);
+            return serverId;
+        } catch (error) {
+            logger.warning('Failed to add manual image to installed servers:', error);
+            // Don't fail the whole operation if this fails
+            return null;
+        }
     }
 
     showServerConfigurationWizard(server) {
@@ -1546,6 +1841,12 @@ export class Servers {
             
             // Get managed containers to verify the container exists and get its status
             const containers = await window.go.main.App.GetManagedContainers();
+            if (!containers || !Array.isArray(containers)) {
+                logger.error('Failed to get managed containers or containers is not an array:', containers);
+                this.showErrorModal('Container Status Check Failed', 'Unable to verify container status. The container may have been created but status is unknown.');
+                return;
+            }
+            
             const container = containers.find(c => c.id === containerId || c.id.startsWith(containerId) || containerId.startsWith(c.id));
             
             if (!container) {

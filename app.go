@@ -984,6 +984,44 @@ func (a *App) InstallServer(server RegistryServer) error {
 	return a.configManager.AddOrUpdateInstalledServer(installedServer)
 }
 
+// InstallManualServer creates an installed server entry for a manually pulled Docker image
+func (a *App) InstallManualServer(dockerImage, name, description string) (string, error) {
+	if a.configManager == nil {
+		return "", fmt.Errorf("configuration manager not available")
+	}
+
+	serverID := fmt.Sprintf("manual-%s-%d", strings.ToLower(strings.ReplaceAll(name, " ", "-")), time.Now().Unix())
+	installedServer := InstalledServer{
+		ID:                   serverID,
+		Name:                 name,
+		DockerImage:          dockerImage,
+		Version:              "latest",
+		Description:          description,
+		SetupDescription:     fmt.Sprintf("Manually configured Docker container from image %s", dockerImage),
+		SupportURL:           "",
+		License:              "Unknown",
+		Maintainer:           "Custom",
+		Tags:                 []string{"manual", "custom"},
+		Architecture:         []string{"amd64"},
+		HealthCheck:          make(map[string]any),
+		ResourceRequirements: make(map[string]any),
+		DockerCommand:        "",
+		EnvironmentVariables: make(map[string]any),
+		Ports:                make(map[string]any),
+		Volumes:              []any{},
+		InstallDate:          time.Now().Format(time.RFC3339),
+		LastUpdated:          time.Now().Format(time.RFC3339),
+		SourceRegistry:       "Custom Docker",
+		IsOfficial:           false,
+	}
+
+	err := a.configManager.AddOrUpdateInstalledServer(installedServer)
+	if err != nil {
+		return "", err
+	}
+	return serverID, nil
+}
+
 // GetInstalledServers returns all installed servers (those that have images pulled)
 func (a *App) GetInstalledServers() ([]InstalledServer, error) {
 	if a.configManager == nil {
