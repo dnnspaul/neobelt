@@ -7,7 +7,7 @@ The application is meant to be run on Windows, macOS and Linux.
 ## Nomenclature
 - Server: A MCP server instance. Represented by a Docker container.
 - Server Image: A MCP server image that is already been pulled by Docker. Represented by a Docker image.
-- Registry: A registry server is a HTTP endpoint that contains a JSON file with a list of available MCP server images. It contains required information to run the server, like environment variables, ports, volumes, etc. In `docs/registry-example.json` you can see an example of a registry file.
+- Registry: A registry server is a HTTP endpoint that contains a JSON file with a list of available MCP server images. It contains required information to run the server, like environment variables, ports, volumes, etc. In `docs/registry.json` you can see the official registry.
 - Installed Server: A MCP server that is installed. It's represented by a setup Docker image.
 - Configured Server: A MCP server that is configured. It's represented by a running Docker container with configured environment variables, ports, volumes, etc.
 

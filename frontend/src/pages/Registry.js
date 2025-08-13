@@ -1418,7 +1418,7 @@ export class Registry {
                         </svg>
                         <div class="ml-3">
                             <h4 class="text-sm font-medium text-blue-800">Registry Format</h4>
-                            <p class="mt-1 text-sm text-blue-700">The registry URL should point to a JSON file containing server definitions compatible with the MCP registry format. <button type="button" onclick="window.runtime.BrowserOpenURL('https://github.com/dnnspaul/neobelt/blob/main/docs/registry-example.json')" class="font-medium text-blue-800 hover:text-blue-900 underline cursor-pointer bg-transparent border-none p-0">View example registry format</button>.</p>
+                            <p class="mt-1 text-sm text-blue-700">The registry URL should point to a JSON file containing server definitions compatible with the MCP registry format. <button type="button" onclick="window.runtime.BrowserOpenURL('https://github.com/dnnspaul/neobelt/blob/main/docs/registry.json')" class="font-medium text-blue-800 hover:text-blue-900 underline cursor-pointer bg-transparent border-none p-0">View example registry format</button>.</p>
                         </div>
                     </div>
                 </div>
