@@ -110,23 +110,7 @@ jobs:
 
       - name: Build application (macOS)
         if: matrix.build.os == 'macos-latest'
-        run: |
-          echo "=== Pre-build Debug ==="
-          echo "GO111MODULE: $GO111MODULE"
-          echo "GOPATH: $GOPATH" 
-          echo "GOROOT: $GOROOT"
-          echo "PWD: $(pwd)"
-          echo "Go version: $(go version)"
-          echo "Module mode check:"
-          go env GOMOD
-          go env GO111MODULE
-          echo "=== Testing Go Build ==="
-          go build -v ./internal/app || echo "Direct go build failed"
-          echo "=== Force Module Mode and Wails Build ==="
-          unset GOPATH
-          export GO111MODULE=on
-          export GOFLAGS="-mod=readonly"
-          wails build -platform darwin/universal -ldflags "-s -w -X main.Version=${{ env.APP_VERSION }} -X main.BuildTime=${{ env.BUILD_TIME }} -X main.CommitHash=${{ env.COMMIT_HASH }}"
+        run: wails build -platform darwin/universal -ldflags "-s -w -X main.Version=${{ env.APP_VERSION }} -X main.BuildTime=${{ env.BUILD_TIME }} -X main.CommitHash=${{ env.COMMIT_HASH }}"
 
       # macOS Code Signing and Notarization (only for releases and main branch, not PRs)
       - name: Setup macOS certificates and code signing

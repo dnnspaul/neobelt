@@ -14,8 +14,8 @@
 # Go workspace file
 go.work
 
-# Wails build output
-app/
+# Wails build output (binaries only, keep build config)
+/build/bin/
 dist/
 
 # Frontend dependencies
